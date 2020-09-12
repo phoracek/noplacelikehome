@@ -1,0 +1,130 @@
+- hosts: 127.0.0.1
+  connection: local
+  vars:
+    workstation: false
+    # TODO: register username of non-root
+    full_name: "Petr Horáček"
+    email: "phoracek@redhat.com"
+  tasks:
+  - name: Collect non-root username
+    shell: whoami
+    register: whoami_result
+# -- Git -----------------------------------------------------------------------
+  - name: Git
+    block:
+    - name: Install Git
+      dnf:
+        name: git
+        state: present
+      become: true
+    - name: Configure global variables
+      git_config:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        scope: global
+      with_items:
+        - { name: "user.name",  value: "{{ full_name }}" }
+        - { name: "user.email", value: "{{ email }}" }
+# -- Zsh -----------------------------------------------------------------------
+  - name: Zsh
+    block:
+    - name: Install Zsh
+      dnf:
+        name: zsh
+        state: present
+      become: true
+    - name: Install oh-my-zsh
+      git:
+        repo: https://github.com/robbyrussell/oh-my-zsh.git
+        dest: ~/.oh-my-zsh
+    - name: Configure Zsh
+      copy:
+        src: ./zsh/zshrc
+        dest: ~/.zshrc
+    - name: Install custom theme for workstation
+      copy:
+        src: ./zsh/petr-workstation.zsh-theme
+        dest: ~/.oh-my-zsh/themes/petr.zsh-theme
+      when: workstation
+    - name: Install custom theme for server
+      copy:
+        src: ./zsh/petr-server.zsh-theme
+        dest: ~/.oh-my-zsh/themes/petr.zsh-theme
+      when: not workstation
+    - name: Set Zsh as the default shell
+      user:
+        name: "{{ whoami_result.stdout }}"
+        shell: /usr/bin/zsh
+      become: true
+# -- Go ------------------------------------------------------------------------
+# -- Rust ----------------------------------------------------------------------
+  - name: Rust
+    block:
+    - name: Install gcc
+      dnf:
+        name: gcc
+        state: present
+      become: true
+    - name: Install Rust and Cargo
+      shell: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+# -- Virtualization ------------------------------------------------------------
+  - name: Virtualization
+    when: workstation
+    block:
+    - name: Install virt-manager
+      dnf:
+        name: virt-manager
+        state: present
+      become: true
+# -- Development VM ------------------------------------------------------------
+    # Configure it so non-root can access VMs and share a private directory with them
+    - name: Vagrant
+    - name: Development VM
+# -- KubeVirt ------------------------------------------------------------------
+# setup KubeVirt development machine
+# maybe vagrant?
+# -- Sway ----------------------------------------------------------------------
+  - name: Sway
+    when: workstation
+    block:
+    - name: Install Sway module
+      command: dnf module install sway/full
+      become: true
+    - name: Fix Sway by adding sticky bit to its binary
+      file:
+        path: /usr/bin/sway
+        state: file
+        mode: u+s,g+s,o+s
+      become: true
+    - name: Initialize sway configuration directory
+      file:
+        path: ~/.config/sway
+        state: directory
+    - name: Set Sway configuration
+      copy:
+        src: ./sway/config
+        dest: ~/.config/sway/config
+    - name: Set Sway status bar
+      copy:
+        src: ./sway/status.sh
+        dest: ~/.config/sway/status.sh
+        mode: u+x
+    - name: Build the backlight executable
+      command: ~/.cargo/bin/rustc ./sway/backlight.rs -o /tmp/backlight
+    - name: Move backlight under PATH, set root as the owner of backlight and enable sticky bit
+      copy:
+        src: /tmp/backlight
+        dest: /usr/bin/backklight
+        owner: root
+        group: root
+        mode: u+s,g+s,o+s
+      become: true
+# -- Emacs ---------------------------------------------------------------------
+# -- Pcmanfm -------------------------------------------------------------------
+# -- Utils ---------------------------------------------------------------------
+# pavucontrol-qt
+# filezilla
+# keepassx
+# steam
+# -- Firefox -------------------------------------------------------------------
+# For now, just copy .config/firefox with everything

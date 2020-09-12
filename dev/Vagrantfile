@@ -1,0 +1,36 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+Vagrant.configure("2") do |config|
+  config.vm.hostname = "devm"
+  config.vm.box = "fedora/31-cloud-base"
+  config.vm.synced_folder './', '/code', type: '9p', disabled: false, accessmode: "mapped", mount: true
+
+  config.vm.provider :libvirt do |libvirt|
+    libvirt.cpus = 2
+    libvirt.memory = 8000
+    libvirt.nested = true
+    libvirt.cpu_mode = "host-model"
+  end
+
+  config.vm.provision "shell", privileged: false, inline: <<-SHELL
+    # Update the system
+    sudo dnf update -y
+
+    # Basic dependencies
+    sudo dnf install -y git dnf-plugins-core ansible
+
+    # Install Docker
+    sudo dnf config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo
+    sudo dnf install -y docker-ce docker-ce-cli containerd.io
+    sudo grubby --update-kernel=ALL --args="systemd.unified_cgroup_hierarchy=0"
+    sudo usermod -aG docker ${USER}
+    sudo mkdir /sys/fs/cgroup/systemd
+    sudo mount -t cgroup -o none,name=systemd cgroup /sys/fs/cgroup/systemd
+    sudo systemctl start docker
+
+    # Install dotfiles
+    cd /code/noplacelikehome
+    ansible-playbook play.yml
+  SHELL
+end
