@@ -184,6 +184,11 @@
     - name: Change the splash screen so it shows only text
       shell: plymouth-set-default-theme details -R
       become: true
+    - name: Install alsa-utils to get amixer needed to control sound
+      dnf:
+        name: alsa-utils
+        state: present
+      become: true
 # -- Emacs ---------------------------------------------------------------------
   - name: Emacs
     when: workstation
