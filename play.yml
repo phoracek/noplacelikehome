@@ -2,7 +2,6 @@
   connection: local
   vars:
     workstation: false
-    # TODO: register username of non-root
     full_name: "Petr Horáček"
     email: "phoracek@redhat.com"
   tasks:
@@ -78,8 +77,8 @@
       become: true
 # -- Development VM ------------------------------------------------------------
     # Configure it so non-root can access VMs and share a private directory with them
-    - name: Vagrant
-    - name: Development VM
+    #- name: Vagrant
+    #- name: Development VM
 # -- KubeVirt ------------------------------------------------------------------
 # setup KubeVirt development machine
 # maybe vagrant?
@@ -118,6 +117,9 @@
         owner: root
         group: root
         mode: u+s,g+s,o+s
+      become: true
+    - name: Change the splash screen so it shows only text
+      shell: plymouth-set-default-theme details -R
       become: true
 # -- Emacs ---------------------------------------------------------------------
 # -- Pcmanfm -------------------------------------------------------------------
