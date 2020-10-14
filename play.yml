@@ -108,6 +108,10 @@
         src: ./sway/status.sh
         dest: ~/.config/sway/status.sh
         mode: u+x
+    - name: Start sway when logging in
+      copy:
+        src: ./sway/profile
+        dest: ~/.profile
     - name: Build the backlight executable
       command: ~/.cargo/bin/rustc ./sway/backlight.rs -o /tmp/backlight
     - name: Move backlight under PATH, set root as the owner of backlight and enable sticky bit
