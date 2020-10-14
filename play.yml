@@ -129,7 +129,7 @@
         dest: /usr/bin/backlight
         owner: root
         group: root
-        mode: u+s,g+s,o+s
+        mode: u+sx,g+sx,o+sx
       become: true
     - name: Change the splash screen so it shows only text
       shell: plymouth-set-default-theme details -R
