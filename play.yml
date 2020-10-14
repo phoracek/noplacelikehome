@@ -87,7 +87,7 @@
     when: workstation
     block:
     - name: Install Sway module
-      command: dnf module install sway/full
+      command: dnf module install -y sway/full
       become: true
     - name: Fix Sway by adding sticky bit to its binary
       file:
