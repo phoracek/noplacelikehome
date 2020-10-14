@@ -2,9 +2,11 @@
 # vi: set ft=ruby :
 
 Vagrant.configure("2") do |config|
-  config.vm.hostname = "devm"
+  config.vm.hostname = "vagrant"
   config.vm.box = "fedora/31-cloud-base"
-  config.vm.synced_folder './', '/code', type: '9p', disabled: false, accessmode: "mapped", mount: true
+  config.vm.synced_folder './', '/code', type: 'sshfs'
+  config.vm.synced_folder '.', '/vagrant', disabled: true
+  config.nfs.functional = false
 
   config.vm.provider :libvirt do |libvirt|
     libvirt.cpus = 2
@@ -13,7 +15,9 @@ Vagrant.configure("2") do |config|
     libvirt.cpu_mode = "host-model"
   end
 
-  config.vm.provision "shell", privileged: false, inline: <<-SHELL
+  config.vm.provision "shell", inline: <<-SHELL
+    set -xe
+
     # Update the system
     sudo dnf update -y
 
@@ -24,7 +28,7 @@ Vagrant.configure("2") do |config|
     sudo dnf config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo
     sudo dnf install -y docker-ce docker-ce-cli containerd.io
     sudo grubby --update-kernel=ALL --args="systemd.unified_cgroup_hierarchy=0"
-    sudo usermod -aG docker ${USER}
+    sudo usermod -aG docker vagrant
     sudo mkdir /sys/fs/cgroup/systemd
     sudo mount -t cgroup -o none,name=systemd cgroup /sys/fs/cgroup/systemd
     sudo systemctl start docker

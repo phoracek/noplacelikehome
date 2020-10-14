@@ -49,6 +49,10 @@
       file:
         path: ~/.zprofile.d
         state: directory
+    - name: Initialize zshrc directory
+      file:
+        path: ~/.zshrc.d
+        state: directory
     - name: Install custom theme for workstation
       copy:
         src: ./zsh/petr-workstation.zsh-theme
@@ -67,6 +71,7 @@
 # -- Go ------------------------------------------------------------------------
   - name: Go
     block:
+    # TODO: Only if not installed yet
     - name: Install Go from released binaries
       unarchive:
         src: https://golang.org/dl/go1.15.2.linux-amd64.tar.gz
@@ -104,9 +109,35 @@
         group: libvirt
       become: true
 # -- Development VM ------------------------------------------------------------
-    # Configure it so non-root can access VMs and share a private directory with them
-    #- name: Vagrant
-    #- name: Development VM
+  - name: Development VM
+    when: workstation
+    block:
+    - name: Install Vagrant
+      dnf:
+        name:
+        - vagrant
+        - vagrant-libvirt
+        - vagrant-sshfs
+        state: present
+      become: true
+    - name: Install rsync needed for synchronization on Vagrant
+      dnf:
+        name: rsync
+        state: present
+      become: true
+    - name: Push development VM Vagrantfile to the root of code
+      copy:
+        src: ./dev/Vagrantfile
+        dest: ~/code
+    - name: Push venter script under code diretory
+      copy:
+        src: ./dev/venter.sh
+        dest: ~/code/venter.sh
+        mode: u+x
+    - name: Set an alias to venter
+      copy:
+        src: ./dev/zshrc
+        dest: ~/.zshrc.d/vagrant
 # -- KubeVirt ------------------------------------------------------------------
 # setup KubeVirt development machine
 # maybe vagrant?

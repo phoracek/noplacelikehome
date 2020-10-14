@@ -8,3 +8,9 @@ source $ZSH/oh-my-zsh.sh
 path+=("$HOME/.cargo/bin")
 path+=("/usr/local/go/bin")
 export PATH
+
+if [ "$(ls -A ~/.zshrc.d)" ]; then
+    for f in ~/.zshrc.d/*; do
+        source ${f}
+    done
+fi
