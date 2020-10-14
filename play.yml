@@ -65,10 +65,16 @@
         shell: /usr/bin/zsh
       become: true
 # -- Go ------------------------------------------------------------------------
+# -- C -------------------------------------------------------------------------
+  - name: C
+    block:
+    - name: Install C Development Tools and Libraries
+      shell: dnf groupinstall -y "C Development Tools And Libraries"
+      become: true
 # -- Rust ----------------------------------------------------------------------
   - name: Rust
     block:
-    - name: Install gcc
+    - name: Install gcc for rust libraries
       dnf:
         name: gcc
         state: present
@@ -145,6 +151,7 @@
       become: true
     - name: Enable Emacs as a daemon
       systemd:
+        name: emacs
         state: started
         enabled: true
         scope: user
@@ -169,6 +176,11 @@
         dest: ~/.doom.d/packages.el
     - name: Sync Doom Emacs configuration
       shell: yes | ~/.emacs.d/bin/doom sync
+    - name: Install cmake for terminal plugin
+      dnf:
+        name: cmake
+        state: present
+      become: true
 # -- Pcmanfm -------------------------------------------------------------------
 # -- Utils ---------------------------------------------------------------------
 # pavucontrol-qt
