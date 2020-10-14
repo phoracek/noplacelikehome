@@ -219,4 +219,11 @@
 # keepassx
 # steam
 # -- Firefox -------------------------------------------------------------------
-# For now, just copy .config/firefox with everything
+  - name: Firefox
+    when: workstation
+    block:
+    - name: Install Firefox
+      dnf:
+        name: firefox
+        state: present
+      become: true

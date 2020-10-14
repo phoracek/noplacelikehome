@@ -59,8 +59,7 @@ exec swayidle -w \
     bindsym $mod+Return exec $term
 
     # start Firefox
-    bindsym $mod+i exec firefox -P Work
-    bindsym $mod+Shift+i exec firefox -P Personal
+    bindsym $mod+i exec firefox
 
     # start Emacs
     bindsym $mod+m exec emacsclient
