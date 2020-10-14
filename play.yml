@@ -42,7 +42,7 @@
         src: ./zsh/zshrc
         dest: ~/.zshrc
     - name: Install zsh profile
-      file:
+      copy:
         src: ./zsh/zprofile
         dest: ~/.zprofile
     - name: Initialize profile directory
