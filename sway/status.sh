@@ -19,7 +19,7 @@ if [ -z ${storage_available} ]; then
 fi
 
 # Memory usage
-memory_available=$(free -h | awk 'FNR==2{print $4}')
+memory_available=$(free -h | awk 'FNR==2{print $7}')
 
 # Build the status bar
 echo "$date_formatted                                                                                                       ${memory_available} ${storage_available} ${battery_available}%"
