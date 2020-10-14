@@ -126,7 +126,7 @@
     - name: Move backlight under PATH, set root as the owner of backlight and enable sticky bit
       copy:
         src: /tmp/backlight
-        dest: /usr/bin/backklight
+        dest: /usr/bin/backlight
         owner: root
         group: root
         mode: u+s,g+s,o+s
