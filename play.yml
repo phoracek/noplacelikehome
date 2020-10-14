@@ -90,6 +90,11 @@
         name: virt-manager
         state: present
       become: true
+    - name: Add user to the libvirt group
+      user:
+        name: "{{ whoami_result.stdout }}"
+        group: libvirt
+      become: true
 # -- Development VM ------------------------------------------------------------
     # Configure it so non-root can access VMs and share a private directory with them
     #- name: Vagrant
