@@ -142,6 +142,7 @@
       dnf:
         name: emacs
         state: present
+      become: true
     - name: Fetch Doom Emacs repo
       git:
         repo: https://github.com/hlissner/doom-emacs.git
