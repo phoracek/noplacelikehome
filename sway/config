@@ -63,7 +63,7 @@ exec swayidle -w \
     bindsym $mod+Shift+i exec firefox -P Personal
 
     # start Emacs
-    bindsym $mod+m exec emacs
+    bindsym $mod+m exec emacsclient
 
     # start file manager
     bindsym $mod+p exec pcmanfm
