@@ -135,6 +135,20 @@
       shell: plymouth-set-default-theme details -R
       become: true
 # -- Emacs ---------------------------------------------------------------------
+  - name: Emacs
+    when: workstation
+    block:
+    - name: Install Emacs
+      dnf:
+        name: emacs
+        state: present
+    - name: Fetch Doom Emacs repo
+      git:
+        repo: https://github.com/hlissner/doom-emacs.git
+        dest: ~/.emacs.d
+        depth: 1
+    - name: Install Doom emacs
+      shell: ~/.emacs.d/bin/doom install
 # -- Pcmanfm -------------------------------------------------------------------
 # -- Utils ---------------------------------------------------------------------
 # pavucontrol-qt
