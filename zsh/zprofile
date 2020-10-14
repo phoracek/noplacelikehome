@@ -1,0 +1,4 @@
+# User specific environment and startup programs
+for f in ~/.zprofile.d/*; do
+    source ${f}
+done

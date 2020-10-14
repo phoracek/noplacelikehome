@@ -41,6 +41,14 @@
       copy:
         src: ./zsh/zshrc
         dest: ~/.zshrc
+    - name: Install zsh profile
+      file:
+        src: ./zsh/zprofile
+        dest: ~/.zprofile
+    - name: Initialize profile directory
+      file:
+        path: ~/.zprofile.d
+        state: directory
     - name: Install custom theme for workstation
       copy:
         src: ./zsh/petr-workstation.zsh-theme
@@ -112,7 +120,7 @@
     - name: Start sway when logging in
       copy:
         src: ./sway/profile
-        dest: ~/.profile
+        dest: ~/.zprofile.d/sway
     - name: Build the backlight executable
       command: ~/.cargo/bin/rustc ./sway/backlight.rs -o /tmp/backlight
     - name: Move backlight under PATH, set root as the owner of backlight and enable sticky bit
