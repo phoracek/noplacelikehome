@@ -148,8 +148,22 @@
         repo: https://github.com/hlissner/doom-emacs.git
         dest: ~/.emacs.d
         depth: 1
-    - name: Install Doom emacs
-      shell: ~/.emacs.d/bin/doom install
+    - name: Install Doom Emacs
+      shell: yes | ~/.emacs.d/bin/doom install
+    - name: Apply Doom Emacs config.el
+      template:
+        src: ./emacs/config.el.j2
+        dest: ~/.doom.d/config.el
+    - name: Apply Doom Emacs init.el
+      copy:
+        src: ./emacs/init.el
+        dest: ~/.doom.d/init.el
+    - name: Apply Doom Emacs packages.el
+      copy:
+        src: ./emacs/packages.el
+        dest: ~/.doom.d/packages.el
+    - name: Sync Doom Emacs configuration
+      shell: yes | ~/.emacs.d/bin/doom sync
 # -- Pcmanfm -------------------------------------------------------------------
 # -- Utils ---------------------------------------------------------------------
 # pavucontrol-qt
