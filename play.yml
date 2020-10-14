@@ -183,10 +183,17 @@
       become: true
     - name: Install Iosevka SS05 fonts
       block:
+      - name: Install unzip to be able to extract downloaded fonts
+        dnf:
+          name: unzip
+          state: present
+        become: true
       - name: Download Iosevka fonts into system fonts directory
-        src: https://github.com/be5invis/Iosevka/releases/download/v3.6.3/pkg-iosevka-ss05-3.6.3.zip
-        dest: /usr/share/fonts
-        remote_src: yes
+        unarchive:
+          src: https://github.com/be5invis/Iosevka/releases/download/v3.6.3/pkg-iosevka-ss05-3.6.3.zip
+          dest: /usr/share/fonts
+          remote_src: yes
+        become: true
       - name: Refresh system fonts
         shell: fc-cache
 # -- Pcmanfm -------------------------------------------------------------------
