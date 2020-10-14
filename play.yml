@@ -193,10 +193,21 @@
           name: unzip
           state: present
         become: true
+      - name: Check whether the font is already installed
+        stat:
+          path: /usr/share/fonts/iosevka
+        register: iosevka_directory
+      - name: Create directory for Iosevka font
+        when: not iosevka_directory.stat.exists
+        file:
+          path: /usr/share/fonts/iosevka
+          state: directory
+        become: true
       - name: Download Iosevka fonts into system fonts directory
+        when: not iosevka_directory.stat.exists
         unarchive:
           src: https://github.com/be5invis/Iosevka/releases/download/v3.6.3/pkg-iosevka-ss05-3.6.3.zip
-          dest: /usr/share/fonts
+          dest: /usr/share/fonts/iosevka
           remote_src: yes
         become: true
       - name: Refresh system fonts
