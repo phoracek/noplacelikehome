@@ -54,7 +54,7 @@ mkdir code
 git clone git@github.com:phoracek/noplacelikehome.git ~/code/noplacelikehome
 
 cd ~/code/noplacelikehome
-ansible-playbook play.yml --ask-become-pass --extra-vars '{"workstation": true}'
+./install_workstation.sh
 ```
 
 # Server
@@ -67,5 +67,5 @@ sudo dnf install -y git ansible
 git clone https://github.com/phoracek/noplacelikehome
 
 cd ~/noplacelikehome
-ansible-playbook play.yml --ask-become-pass
+./install_server.sh
 ```
