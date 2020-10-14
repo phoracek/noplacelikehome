@@ -24,6 +24,7 @@
       with_items:
         - { name: "user.name",  value: "{{ full_name }}" }
         - { name: "user.email", value: "{{ email }}" }
+        - { name: "pull.ff", value: "only" }
 # -- Zsh -----------------------------------------------------------------------
   - name: Zsh
     block:
