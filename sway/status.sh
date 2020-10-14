@@ -14,7 +14,7 @@ fi
 
 # Storage usage
 storage_available=$(df --output=avail -h /dev/dm-1 | sed 1d | sed 's/^[[:space:]]*//')
-if [ ! -z ${storage_available} ]; then
+if [ -z ${storage_available} ]; then
     storage_available=$(df --output=avail -h /dev/dm-2 | sed 1d | sed 's/^[[:space:]]*//')
 fi
 
