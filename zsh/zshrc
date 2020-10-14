@@ -6,4 +6,5 @@ source $ZSH/oh-my-zsh.sh
 
 # User config
 path+=("$HOME/.cargo/bin")
+path+=("/usr/local/go/bin")
 export PATH

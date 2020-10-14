@@ -65,6 +65,14 @@
         shell: /usr/bin/zsh
       become: true
 # -- Go ------------------------------------------------------------------------
+  - name: Go
+    block:
+    - name: Install Go from released binaries
+      unarchive:
+        src: https://golang.org/dl/go1.15.2.linux-amd64.tar.gz
+        dest: /usr/local
+        remote_src: yes
+      become: true
 # -- C -------------------------------------------------------------------------
   - name: C
     block:
