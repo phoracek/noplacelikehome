@@ -264,11 +264,23 @@
     - name: Allow sound control, input and output
       dnf:
         name:
-          - pulseaudio
-          - pavucontrol-qt
+        - pulseaudio
+        - pavucontrol-qt
         state: present
       become: true
-# pavucontrol-qt
+    - name: Install file manager
+      dnf:
+        name:
+        - pcmanfm
+      become: true
+    - name: Ensure that configuration folder exists
+      file:
+        path: ~/.config/pcmanfm/default
+        state: directory
+    - name: Configure file manager
+      copy:
+        src: ./pcmanfm/pcmanfm.conf
+        dest: ~/.config/pcmanfm/default/pcmanfm.conf
 # filezilla
 # keepassx
 # steam
