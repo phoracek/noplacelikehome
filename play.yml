@@ -138,9 +138,6 @@
       copy:
         src: ./dev/zshrc
         dest: ~/.zshrc.d/vagrant
-# -- KubeVirt ------------------------------------------------------------------
-# setup KubeVirt development machine
-# maybe vagrant?
 # -- Sway ----------------------------------------------------------------------
   - name: Sway
     when: workstation
@@ -256,7 +253,6 @@
         become: true
       - name: Refresh system fonts
         shell: fc-cache
-# -- Pcmanfm -------------------------------------------------------------------
 # -- Workstation utils ---------------------------------------------------------
   - name: Workstation utils
     when: workstation
@@ -281,9 +277,12 @@
       copy:
         src: ./pcmanfm/pcmanfm.conf
         dest: ~/.config/pcmanfm/default/pcmanfm.conf
-# filezilla
-# keepassx
-# steam
+    - name: Install password manager
+      dnf:
+        name:
+        - keepassxc
+        state: present
+      become: true
 # -- Firefox -------------------------------------------------------------------
   - name: Firefox
     when: workstation
