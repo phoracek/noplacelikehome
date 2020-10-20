@@ -72,6 +72,11 @@
   - name: Go
     block:
     # TODO: Only if not installed yet
+    - name: Install tar needed to extract Go
+      dnf:
+        name: tar
+        state: present
+      become: true
     - name: Install Go from released binaries
       unarchive:
         src: https://golang.org/dl/go1.15.2.linux-amd64.tar.gz
@@ -236,16 +241,16 @@
         become: true
       - name: Check whether the font is already installed
         stat:
-          path: /usr/share/fonts/iosevka
-        register: iosevka_directory
+          path: /usr/share/fonts/iosevka/iosevka-ss05.css
+        register: iosevka_file
       - name: Create directory for Iosevka font
-        when: not iosevka_directory.stat.exists
+        when: not iosevka_file.stat.exists
         file:
           path: /usr/share/fonts/iosevka
           state: directory
         become: true
       - name: Download Iosevka fonts into system fonts directory
-        when: not iosevka_directory.stat.exists
+        #when: not iosevka_file.stat.exists
         unarchive:
           src: https://github.com/be5invis/Iosevka/releases/download/v3.6.3/pkg-iosevka-ss05-3.6.3.zip
           dest: /usr/share/fonts/iosevka
