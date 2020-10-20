@@ -38,7 +38,8 @@ sudo mount /dev/sda1 /tmp/usb_drive
 cp -r /tmp/usb_drive/.ssh .
 
 # Set correct permissions
-chmod -R 0700 ~/.ssh
+chmod 0700 ~/.ssh
+chmod 0600 ~/.ssh/*
 
 # Unmount the drive
 sudo umount /dev/sda1
