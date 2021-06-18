@@ -6,6 +6,11 @@ Bunch of dotfiles. Tested on ThinkPad T470s and T490s, Fedora 34 i3 spin.
 # Packages
 sudo dnf install -y git emacs
 
+# Automatic upgrades
+sudo dnf install -y dnf-automatic
+sudo systemctl enable dnf-automatic-install.timer
+sudo systemctl start dnf-automatic-install.timer
+
 # Doom Emacs
 git clone --depth 1 https://github.com/hlissner/doom-emacs ~/.emacs.d
 ~/.emacs.d/bin/doom install
