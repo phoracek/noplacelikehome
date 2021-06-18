@@ -14,7 +14,7 @@ git clone --depth 1 https://github.com/hlissner/doom-emacs ~/.emacs.d
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 # C
-dnf groupinstall -y "C Development Tools And Libraries"
+sudo dnf groupinstall -y "C Development Tools And Libraries"
 
 # i3 config
 ~/.cargo/bin/rustc ./i3/backlight.rs -o /tmp/backlight
