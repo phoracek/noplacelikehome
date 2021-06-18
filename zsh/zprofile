@@ -1,6 +1,0 @@
-# User specific environment and startup programs
-if [ "$(ls -A ~/.zprofile.d)" ]; then
-    for f in ~/.zprofile.d/*; do
-        source ${f}
-    done
-fi
