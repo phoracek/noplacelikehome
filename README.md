@@ -24,7 +24,8 @@ sudo dnf groupinstall -y "C Development Tools And Libraries"
 # i3 config
 ~/.cargo/bin/rustc ./i3/backlight.rs -o /tmp/backlight
 sudo mv /tmp/backlight /usr/bin/backlight
-sudo chmod +x /usr/bin/backlight
+sudo chown root:root /usr/bin/backlight
+sudo chmod 4775 /usr/bin/backlight
 cp ./i3/config ~/.config/i3/config
 cp ./i3/status.sh ~/.config/i3/status.sh
 
