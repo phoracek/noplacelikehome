@@ -22,4 +22,11 @@ sudo mv /tmp/backlight /usr/bin/backlight
 sudo chmod +x /usr/bin/backlight
 cp ./i3/config ~/.config/i3/config
 cp ./i3/status.sh ~/.config/i3/status.sh
+
+# Doom Emacs config
+systemctl --user enable emacs
+systemctl --user start emacs
+cp ./emacs/config.el ~/.doom.d/config.el
+cp ./emacs/init.el ~/.doom.d/init.el
+~/.emacs.d/bin/doom sync
 ```
