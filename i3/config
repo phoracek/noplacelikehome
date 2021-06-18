@@ -38,6 +38,9 @@ bindsym $mod+i exec firefox
 # start Emacs
 bindsym $mod+m exec emacsclient -c
 
+# start a file manager
+bindsym $mod+p exec thunar
+
 # kill focused window
 bindsym $mod+Shift+q kill
 
