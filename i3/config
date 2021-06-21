@@ -195,7 +195,6 @@ focus_follows_mouse no
 bar {
     position top
 
-    # status_command while ~/.config/i3/status.sh; do sleep 10; done
     status_command while ~/.config/i3/status.sh; do sleep 10; done
 
     colors {
