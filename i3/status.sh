@@ -12,7 +12,8 @@ else
     battery_available=$(cat /sys/class/power_supply/BAT0/capacity)
 fi
 
-if [ "${battery_available}" -lt "20" ]; then
+powered=$(cat /sys/class/power_supply/AC/online)
+if [ "${battery_available}" -lt "20" ] && [ "${powered}" -eq "0" ]; then
    dunstify -u critical "Low battery"
 fi
 
