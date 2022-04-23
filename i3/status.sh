@@ -12,6 +12,10 @@ else
     battery_available=$(cat /sys/class/power_supply/BAT0/capacity)
 fi
 
+if [ "${battery_available}" -lt "20" ]; then
+   dunstify -u critical "Low battery"
+fi
+
 # Storage usage
 storage_available=$(df --output=avail -h /dev/dm-0 | sed 1d | sed 's/^[[:space:]]*//')
 if [ -z ${storage_available} ]; then
