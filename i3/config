@@ -198,11 +198,12 @@ mode "resize" {
 
 bindsym $mod+r mode "resize"
 
-# Per-application config:
+# Per-application config, use `xprop` to find the class:
 for_window [class="Alacritty"] border pixel 2
 for_window [class="firefox"] border pixel 0
 for_window [class="Emacs"] border pixel 0
 for_window [class="vlc"] border pixel 0
+for_window [class="todoist"] border pixel 0
 
 # don't focus mouse
 focus_follows_mouse no
