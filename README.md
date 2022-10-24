@@ -4,7 +4,7 @@ Bunch of dotfiles. Tested on ThinkPad T470s and T490s, Fedora 34 i3 spin.
 
 ``` shell
 # Packages
-sudo dnf install -y git emacs alacritty lxpolkit
+sudo dnf install -y git emacs alacritty lxpolkit zsh
 
 # Automatic upgrades
 sudo dnf install -y dnf-automatic
@@ -35,4 +35,8 @@ systemctl --user start emacs
 cp ./emacs/config.el ~/.doom.d/config.el
 cp ./emacs/init.el ~/.doom.d/init.el
 ~/.emacs.d/bin/doom sync
+
+# Zsh config
+sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+cp zsh/zshrc ~/.zshrc
 ```
