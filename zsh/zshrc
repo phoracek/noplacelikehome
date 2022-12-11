@@ -1,11 +1,16 @@
 export ZSH="/home/phoracek/.oh-my-zsh"
 ZSH_THEME="robbyrussell"
-plugins=(git rust fancy-ctrl-z)
+plugins=(git rust fancy-ctrl-z dnf)
 source $ZSH/oh-my-zsh.sh
 
 export PATH="$PATH:/home/phoracek/.local/bin"
+export PATH="$PATH:/usr/local/go/bin"
 export EDITOR='hx'
 
 # Quick jumps to projects
 alias kaseta='cd ~/code/zlosynth/kaseta'
 alias daisy='cd ~/code/zlosynth/daisy'
+alias proton='cd ~/code/zlosynth/proton'
+alias achordion='cd ~/code/zlosynth/achordion'
+alias zlosynth.github.io='cd ~/code/zlosynth/zlosynth.github.io'
+alias noplacelikehome='cd ~/noplacelikehome'
