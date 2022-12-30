@@ -1,0 +1,7 @@
+[[language]]
+name = "rust"
+config = { procMacro = { enable = true } }
+
+[[language]]
+name = "latex"
+rulers = [81]

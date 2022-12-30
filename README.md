@@ -15,6 +15,17 @@ sudo systemctl start dnf-automatic-install.timer
 git clone --depth 1 https://github.com/hlissner/doom-emacs ~/.emacs.d
 ~/.emacs.d/bin/doom install
 
+# Helix
+mkdir -p ~/.config/helix
+cp ./helix/* ~/.config/helix
+git clone https://github.com/helix-editor/helix /tmp/helix
+pushd /tmp/helix
+git checkout 22.12
+cargo install --path helix-term
+cp -r runtime ~/.config/helix
+popd
+hx --health
+
 # Rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
