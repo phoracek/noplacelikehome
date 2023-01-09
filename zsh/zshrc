@@ -3,9 +3,8 @@ ZSH_THEME="robbyrussell"
 plugins=(git rust fancy-ctrl-z dnf)
 source $ZSH/oh-my-zsh.sh
 
-export PATH="$PATH:/home/phoracek/.local/bin"
-export PATH="$PATH:/usr/local/go/bin"
-export PATH="$PATH:/home/phoracek/go/bin"
+source "$HOME/.cargo/env"
+export PATH="$PATH:$HOME/.local/go/bin"
 export EDITOR='hx'
 
 # Quick jumps to projects

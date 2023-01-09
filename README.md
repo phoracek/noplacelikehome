@@ -21,6 +21,13 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 # C
 sudo dnf groupinstall -y "C Development Tools And Libraries"
 
+# Go
+curl -O -L https://go.dev/dl/go1.19.4.linux-amd64.tar.gz
+rm -rf ~/.local/go
+mkdir -p ~/.local/go
+tar -C ~/.local -xzf go1.19.4.linux-amd64.tar.gz
+rm -f go1.19.4.linux-amd64.tar.gz
+
 # i3 config
 ~/.cargo/bin/rustc ./i3/backlight.rs -o /tmp/backlight
 sudo mv /tmp/backlight /usr/bin/backlight
