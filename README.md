@@ -15,17 +15,6 @@ sudo dnf install -y dnf-automatic
 sudo systemctl enable dnf-automatic-install.timer
 sudo systemctl start dnf-automatic-install.timer
 
-# Helix
-mkdir -p ~/.config/helix
-cp ./helix/* ~/.config/helix
-git clone https://github.com/helix-editor/helix /tmp/helix
-pushd /tmp/helix
-git checkout 22.12
-cargo install --path helix-term
-cp -r runtime ~/.config/helix
-popd
-hx --health
-
 # Rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
@@ -43,4 +32,15 @@ cp ./i3/status.sh ~/.config/i3/status.sh
 # Zsh config
 sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 cp zsh/zshrc ~/.zshrc
+
+# Helix
+mkdir -p ~/.config/helix
+cp ./helix/* ~/.config/helix
+git clone https://github.com/helix-editor/helix /tmp/helix
+pushd /tmp/helix
+git checkout 22.12
+cargo install --path helix-term
+cp -r runtime ~/.config/helix
+popd
+hx --health
 ```
