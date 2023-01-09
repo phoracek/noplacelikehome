@@ -6,6 +6,10 @@ Bunch of dotfiles. Tested on ThinkPad T470s and T490s, Fedora 34 i3 spin.
 # Packages
 sudo dnf install -y git emacs alacritty lxpolkit zsh
 
+# Git
+git config --global user.name "Your Name"
+git config --global user.email "youremail@yourdomain.com"
+
 # Automatic upgrades
 sudo dnf install -y dnf-automatic
 sudo systemctl enable dnf-automatic-install.timer
