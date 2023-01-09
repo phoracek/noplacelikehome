@@ -46,7 +46,7 @@ cp ./helix/* ~/.config/helix
 git clone https://github.com/helix-editor/helix /tmp/helix
 pushd /tmp/helix
 git checkout 22.12
-cargo install --path helix-term
+cargo install --locked --path helix-term
 cp -r runtime ~/.config/helix
 popd
 hx --health
