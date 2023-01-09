@@ -18,6 +18,11 @@ sudo systemctl start dnf-automatic-install.timer
 # Rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
+# Rust Analyzer
+mkdir -p ~/.local/bin
+rustup component add rust-analyzer
+ln -s $(rustup which --toolchain stable rust-analyzer) ~/.local/bin/rust-analyzer
+
 # C
 sudo dnf groupinstall -y "C Development Tools And Libraries"
 

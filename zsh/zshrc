@@ -4,6 +4,7 @@ plugins=(git rust fancy-ctrl-z dnf)
 source $ZSH/oh-my-zsh.sh
 
 source "$HOME/.cargo/env"
+export PATH="$PATH:$HOME/.local/bin"
 export PATH="$PATH:$HOME/.local/go/bin"
 export EDITOR='hx'
 
