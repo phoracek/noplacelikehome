@@ -4,7 +4,7 @@ Bunch of dotfiles. Tested on ThinkPad T470s and T490s, Fedora 34 i3 spin.
 
 ``` shell
 # Packages
-sudo dnf install -y git alacritty lxpolkit zsh
+sudo dnf install -y git alacritty lxpolkit zsh sqlite xkill
 
 # Git
 git config --global user.name "Your Name"
