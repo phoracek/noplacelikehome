@@ -50,7 +50,7 @@ cp zsh/zshrc ~/.zshrc
 
 # Helix
 mkdir -p ~/.config/helix
-cp ./helix/* ~/.config/helix
+cp -r ./helix/* ~/.config/helix
 git clone https://github.com/helix-editor/helix /tmp/helix
 pushd /tmp/helix
 git checkout 23.03

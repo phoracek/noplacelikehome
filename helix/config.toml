@@ -8,3 +8,9 @@ idle-timeout = 100
 insert = "bar"
 normal = "block"
 select = "block"
+
+[editor.soft-wrap]
+enable = true
+
+[editor.lsp]
+display-inlay-hints = true
