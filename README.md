@@ -53,7 +53,7 @@ mkdir -p ~/.config/helix
 cp ./helix/* ~/.config/helix
 git clone https://github.com/helix-editor/helix /tmp/helix
 pushd /tmp/helix
-git checkout 22.12
+git checkout 23.03
 cargo install --locked --path helix-term
 cp -r runtime ~/.config/helix
 popd
