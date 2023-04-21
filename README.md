@@ -5,6 +5,7 @@ Bunch of dotfiles. Tested on ThinkPad T470s and T490s, Fedora 38 i3 spin.
 ``` shell
 # Packages
 sudo dnf install -y git alacritty lxpolkit zsh sqlite xkill
+sudo dnf remove -y network-manager-applet
 
 # Git
 git config --global user.name "Your Name"
