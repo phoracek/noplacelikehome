@@ -193,7 +193,6 @@ mode "pomodoro [w]ork [b]reak [s]top" {
         bindsym s exec "~/.config/i3/pomodoro.sh stop && i3-msg mode default"
         bindsym Return mode "default"
         bindsym Escape mode "default"
-        bindsym $mod+r mode "default"
 }
 
 bindsym $mod+o mode "pomodoro [w]ork [b]reak [s]top"
