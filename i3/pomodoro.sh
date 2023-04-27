@@ -43,7 +43,7 @@ function status {
       echo "    time to work"
     fi
   else
-    echo "                  "
+    echo "                "
   fi
 }
 

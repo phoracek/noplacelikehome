@@ -33,4 +33,4 @@ memory_available=$(free -h | awk 'FNR==2{print $7}')
 pomodoro=$(~/.config/i3/pomodoro.sh status)
 
 # Build the status bar
-echo "$date_formatted                                                                                    ${pomodoro} ${memory_available} ${storage_available} ${battery_available}%"
+echo "$date_formatted                                                                                     ${pomodoro} ${memory_available} ${storage_available} ${battery_available}%"
