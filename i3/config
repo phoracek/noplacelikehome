@@ -186,6 +186,18 @@ mode "resize" {
 
 bindsym $mod+r mode "resize"
 
+# Work with pomodoro timer
+mode "pomodoro [w]ork [b]reak [s]top" {
+        bindsym w exec "~/.config/i3/pomodoro.sh work && i3-msg mode default"
+        bindsym b exec "~/.config/i3/pomodoro.sh break && i3-msg mode default"
+        bindsym s exec "~/.config/i3/pomodoro.sh stop && i3-msg mode default"
+        bindsym Return mode "default"
+        bindsym Escape mode "default"
+        bindsym $mod+r mode "default"
+}
+
+bindsym $mod+o mode "pomodoro [w]ork [b]reak [s]top"
+
 # Per-application config, use `xprop` to find the class:
 for_window [class="Alacritty"] border pixel 2
 for_window [class="firefox"] border pixel 0
