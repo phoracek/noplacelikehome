@@ -28,11 +28,11 @@ ln -s $(rustup which --toolchain stable rust-analyzer) ~/.local/bin/rust-analyze
 sudo dnf groupinstall -y "C Development Tools And Libraries"
 
 # Go
-curl -O -L https://go.dev/dl/go1.19.4.linux-amd64.tar.gz
+curl -O -L https://go.dev/dl/go1.20.4.linux-amd64.tar.gz
 rm -rf ~/.local/go
 mkdir -p ~/.local/go
-tar -C ~/.local -xzf go1.19.4.linux-amd64.tar.gz
-rm -f go1.19.4.linux-amd64.tar.gz
+tar -C ~/.local -xzf go1.20.4.linux-amd64.tar.gz
+rm -f go1.20.4.linux-amd64.tar.gz
 
 # gopls
 ~/.local/go/bin/go install golang.org/x/tools/gopls@latest
