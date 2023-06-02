@@ -35,7 +35,7 @@ tar -C ~/.local -xzf go1.19.4.linux-amd64.tar.gz
 rm -f go1.19.4.linux-amd64.tar.gz
 
 # gopls
-go install golang.org/x/tools/gopls@latest
+~/.local/go/bin/go install golang.org/x/tools/gopls@latest
 
 # i3 config
 ~/.cargo/bin/rustc ./i3/backlight.rs -o /tmp/backlight
