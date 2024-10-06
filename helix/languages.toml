@@ -1,6 +1,6 @@
-[[language]]
-name = "rust"
-config = { procMacro = { enable = true } }
+[language-server.rust-analyzer.config]                                                  
+diagnostics.disabled = ["inactive-code"]
+procMacro = { enable = true }
 
 [[language]]
 name = "latex"
