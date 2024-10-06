@@ -4,7 +4,7 @@ Bunch of dotfiles. Tested on ThinkPad T470s and T490s, Fedora 40 i3 spin.
 
 ``` shell
 # Packages
-sudo dnf install -y git alacritty lxpolkit zsh xkill
+sudo dnf install -y git alacritty lxpolkit zsh xkill keepassxc
 sudo dnf remove -y network-manager-applet volumeicon
 
 # Git
@@ -49,6 +49,16 @@ cp -r ./helix/* ~/.config/helix
 chmod +x /tmp/hx
 sudo mv /tmp/hx /usr/bin
 hx --health
+
+# Virtualization
+sudo dnf install -y virt-manager virt-install libvirt
+sudo systemctl start libvirtd
+sudo systemctl enable libvirtd
+sudo usermod -a -G libvirt $(whoami)
+newgrp libvirt
+sudo sed -i '/unix_sock_group/c\unix_sock_group = "libvirt"' /etc/libvirt/libvirtd.conf
+sudo sed -i '/unix_sock_ro_perms/c\unix_sock_ro_perms = "0770"' /etc/libvirt/libvirtd.conf
+sudo systemctl restart libvirtd.service
 
 # Codecs
 sudo dnf install -y https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm
