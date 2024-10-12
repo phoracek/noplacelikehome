@@ -7,6 +7,11 @@ Bunch of dotfiles. Tested on ThinkPad T470s and T490s, Fedora 40 i3 spin.
 sudo dnf install -y git alacritty lxpolkit zsh xkill keepassxc
 sudo dnf remove -y network-manager-applet volumeicon
 
+# Docking station (Lenovo Thunderbolt III gen 2)
+sudo dnf install -y bolt
+boltctl list
+boltctl enroll <domain>
+
 # Git
 git config --global user.name "Your Name"
 git config --global user.email "youremail@yourdomain.com"
