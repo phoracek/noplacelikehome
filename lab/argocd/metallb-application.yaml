@@ -11,7 +11,7 @@ spec:
     server: https://kubernetes.default.svc
   project: default
   source:
-    path: lab/argocd/metallb/base
+    path: lab/argocd/metallb/overlays/lab
     repoURL: https://github.com/phoracek/noplacelikehome.git
     targetRevision: HEAD
   syncPolicy:
