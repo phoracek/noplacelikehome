@@ -19,4 +19,4 @@ spec:
     kind: KubeVirt
     jsonPointers:
     # KubeVirt updates this spec
-    - /spec/configuration
+    - /spec/configuration/developerConfiguration
