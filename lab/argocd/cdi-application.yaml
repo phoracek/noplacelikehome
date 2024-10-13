@@ -11,7 +11,7 @@ spec:
     server: https://kubernetes.default.svc
   project: default
   source:
-    path: argocd/cdi/overlays/lab
+    path: lab/argocd/cdi/overlays/lab
     repoURL: https://github.com/phoracek/noplacelikehome.git
     targetRevision: HEAD
   ignoreDifferences:
