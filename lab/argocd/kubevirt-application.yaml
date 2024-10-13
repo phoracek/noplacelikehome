@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kubevirt
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  destination:
+    namespace: kubevirt
+    server: https://kubernetes.default.svc
+  project: default
+  source:
+    path: argocd/kubevirt/overlays/lab
+    repoURL: https://github.com/phoracek/noplacelikehome.git
+    targetRevision: HEAD
+  ignoreDifferences:
+  - group: kubevirt.io/v1
+    kind: KubeVirt
+    jsonPointers:
+    # KubeVirt updates this spec
+    - /spec/configuration

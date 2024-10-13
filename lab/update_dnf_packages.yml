@@ -1,0 +1,9 @@
+---
+- name: Upgrade all packages
+  hosts: server
+  become: yes
+  tasks:
+    - name: Upgrade all packages
+      ansible.builtin.dnf:
+        name: "*"
+        state: latest

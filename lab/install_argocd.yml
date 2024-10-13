@@ -1,0 +1,21 @@
+---
+- name: Install ArgoCD
+  hosts: localhost
+  gather_facts: false
+  tasks:
+  - name: Create a k8s namespace
+    kubernetes.core.k8s:
+      name: argocd
+      api_version: v1
+      kind: Namespace
+      state: present
+  - name: Download ArgoCD manifest to the cluster
+    ansible.builtin.get_url:
+      url: https://raw.githubusercontent.com/argoproj/argo-cd/v2.12.4/manifests/install.yaml
+      dest: /tmp/argocd.yml
+      mode: '0664'
+  - name: Apply ArgoCD manifest to the cluster
+    kubernetes.core.k8s:
+      namespace: argocd
+      state: present
+      src: /tmp/argocd.yml

@@ -1,0 +1,39 @@
+---
+- name: Install k3s
+  hosts: server
+  become: yes
+  tasks:
+    - name: Use the official K3s script for installation
+      ansible.builtin.shell:
+        cmd: curl -sfL https://get.k3s.io | sh -
+    - name: Allow external access to the API server
+      ansible.posix.firewalld:
+        port: 6443/tcp
+        permanent: true
+        immediate: true
+        state: enabled
+# firewall-cmd --permanent --add-port=6443/tcp #apiserver
+# firewall-cmd --permanent --zone=trusted --add-source=10.42.0.0/16 #pods
+# firewall-cmd --permanent --zone=trusted --add-source=10.43.0.0/16 #services
+# firewall-cmd --reload
+- name: Fetch kubeconfig
+  hosts: server
+  become: yes
+  tasks:
+    - name: Create a copy
+      ansible.builtin.copy:
+        src: /etc/rancher/k3s/k3s.yaml
+        remote_src: true
+        dest: /etc/rancher/k3s/k3s-remote.yaml
+        mode: '0600'
+    - name: Replace localhost with public IP
+      ansible.builtin.replace:
+        path: /etc/rancher/k3s/k3s-remote.yaml
+        regexp: '127.0.0.1'
+        replace: '{{ ansible_ssh_host }}'
+    - name: Download to ~/.kube/config
+      ansible.builtin.fetch:
+        src: /etc/rancher/k3s/k3s-remote.yaml
+        dest: ~/.kube/config
+        flat: yes
+

@@ -1,0 +1,32 @@
+---
+- name: Configure linux bridge over the default NIC
+  hosts: server
+  vars:
+    network_state:
+      interfaces:
+        - name: br0
+          type: linux-bridge
+          state: up
+          ipv4:
+            enabled: true
+            dhcp: true
+            auto-dns: true
+            auto-gateway: true
+            auto-routes: true
+          bridge:
+            options:
+              stp:
+                enabled: false
+            port:
+              - name: "enp1s0"
+  become: yes
+  roles:
+  - role: linux-system-roles.network
+
+- name: Configure hostname
+  hosts: server
+  become: yes
+  tasks:
+    - name: Set a hostname
+      ansible.builtin.hostname:
+        name: micro01
