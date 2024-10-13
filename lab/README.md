@@ -22,9 +22,17 @@ ansible-playbook -i inventory.file -u ansible install_argocd.yml
 kubectl apply -f argocd/multus-application.yaml
 kubectl apply -f argocd/kubevirt-application.yaml
 kubectl apply -f argocd/cdi-application.yaml
+kubectl apply -f argocd/metallb-application.yaml
 kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
 kubectl port-forward service/argocd-server 8090:80 -n argocd
 # Sync the applications and set a password
+```
+
+```sh
+kubectl create deployment hello-server --image=gcr.io/google-samples/hello-app:1.0
+kubectl expose deployment hello-server --type LoadBalancer --port 80 --target-port 8080
+kubectl get all
+# Test connectivity
 ```
 
 TODO:
