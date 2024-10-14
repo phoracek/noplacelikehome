@@ -1,0 +1,21 @@
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: homeassistant
+spec:
+  template:
+    spec:
+      domain:
+        devices:
+          interfaces:
+          - name: default
+            masquerade: {}
+          - name: iot
+            bridge: {}
+      networks:
+      - name: default
+        pod: {}
+      - name: iot
+        multus:
+          networkName: iot-network
+
