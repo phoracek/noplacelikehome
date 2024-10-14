@@ -19,6 +19,10 @@ ansible-playbook -i inventory.file -u ansible install_dnf_automatic.yml
 ansible-playbook -i inventory.file -u ansible configure_network.yml
 ansible-playbook -i inventory.file -u ansible install_k3s.yml
 ansible-playbook -i inventory.file -u ansible install_argocd.yml
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
+kubectl port-forward service/argocd-server 8090:80 -n argocd
+# Log in and set a new password
+kubectl -n argocd delete secret argocd-initial-admin-secret
 ```
 
 Deploy applications using ArgoCD:
@@ -31,9 +35,6 @@ kubectl apply -f cdi-application.yaml
 kubectl apply -f metallb-application.yaml
 kubectl apply -f homeassistant-application.yaml
 kubectl apply -f argocd-application.yaml
-kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
-kubectl port-forward service/argocd-server 8090:80 -n argocd
-# Sync the applications and set a password
 ```
 
 Test LoadBalacer connectivity:
@@ -47,11 +48,9 @@ kubectl get all
 
 TODO:
 - update docs to open firewall for all
-- add yaml for service
 
 TODO:
 - NAD
-- Use Tekton to decompress Home Assistant
 - Bridge binding plugin.
 - Disable ServiceLB and Klipper
 - Deploy Kuberentes Dashboard
