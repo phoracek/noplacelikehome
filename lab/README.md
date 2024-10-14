@@ -50,8 +50,9 @@ TODO:
 - update docs to open firewall for all
 
 TODO:
-- NAD
-- Bridge binding plugin.
 - Disable ServiceLB and Klipper
 - Deploy Kuberentes Dashboard
 - Replace MetalLB Services with an Ingress where possible
+- Set static MAC for HA IOT interface and assign it with an IP
+- Put HA IOT interface on a VLAN
+- Expose HA running on IOT VLAN to MAIN VLAN over router
