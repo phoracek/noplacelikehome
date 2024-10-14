@@ -30,6 +30,7 @@ kubectl apply -f kubevirt-application.yaml
 kubectl apply -f cdi-application.yaml
 kubectl apply -f metallb-application.yaml
 kubectl apply -f homeassistant-application.yaml
+kubectl apply -f argocd-application.yaml
 kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d
 kubectl port-forward service/argocd-server 8090:80 -n argocd
 # Sync the applications and set a password
@@ -54,3 +55,4 @@ TODO:
 - Bridge binding plugin.
 - Disable ServiceLB and Klipper
 - Deploy Kuberentes Dashboard
+- Replace MetalLB Services with an Ingress where possible
