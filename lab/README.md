@@ -34,7 +34,11 @@ kubectl apply -f kubevirt-application.yaml
 kubectl apply -f cdi-application.yaml
 kubectl apply -f metallb-application.yaml
 kubectl apply -f homeassistant-application.yaml
+# Enable File editor addon, show it in side panel, open configuration.yaml, add:
+# http:
+#   server_port: 80
 kubectl apply -f argocd-application.yaml
+# TODO: File server for ISOs and stuff like that, so it does not have to be downloaded every time
 ```
 
 Test LoadBalacer connectivity:
