@@ -3,7 +3,6 @@ kind: Kustomization
 resources:
 - ../../base
 - network.yaml
-- connect-to-iot-network.yaml
 patches:
 - path: set-static-ip.yaml
 - path: connect-to-iot-network.yaml
