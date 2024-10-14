@@ -3,5 +3,5 @@ kind: CDI
 metadata:
   name: cdi
   annotations:
-    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/sync-wave: "11"
 

@@ -5,7 +5,7 @@ metadata:
   name: pool
   namespace: metallb-system
   annotations:
-    argocd.argoproj.io/sync-wave: "2"
+    argocd.argoproj.io/sync-wave: "11"
 spec:
   addresses:
   - 192.168.0.2-192.168.0.9
@@ -16,4 +16,4 @@ metadata:
   name: config
   namespace: metallb-system
   annotations:
-    argocd.argoproj.io/sync-wave: "2"
+    argocd.argoproj.io/sync-wave: "11"
