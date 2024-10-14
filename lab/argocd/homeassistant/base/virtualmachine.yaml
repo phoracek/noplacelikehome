@@ -26,7 +26,7 @@ spec:
               secureBoot: false
         resources:
           requests:
-            memory: 2000M
+            memory: 2G
       volumes:
       - name: disk1
         dataVolume:
