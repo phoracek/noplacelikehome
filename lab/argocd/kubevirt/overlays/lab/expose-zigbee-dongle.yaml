@@ -1,0 +1,11 @@
+spec:
+  configuration:
+    developerConfiguration: 
+      featureGates:
+        - HostDevices
+    permittedHostDevices:
+      usb:
+        - resourceName: kubevirt.io/zigbee
+          selectors:
+            - vendor: "1a86"
+              product: "55d4"

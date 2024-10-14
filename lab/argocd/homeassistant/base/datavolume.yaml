@@ -1,0 +1,14 @@
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: homeassistant
+spec:
+  source:
+      http:
+         url: "https://github.com/home-assistant/operating-system/releases/download/13.1/haos_ova-13.1.qcow2.xz"
+  storage:
+    volumeMode: Filesystem
+    resources:
+      requests:
+        storage: "40G"
+

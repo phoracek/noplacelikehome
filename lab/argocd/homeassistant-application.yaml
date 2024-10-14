@@ -1,16 +1,19 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: kubevirt
+  name: homeassistant
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "10"
+    argocd.argoproj.io/sync-wave: "20"
 spec:
   destination:
-    namespace: kubevirt
+    namespace: homeassistant
     server: https://kubernetes.default.svc
   project: default
   source:
-    path: lab/argocd/kubevirt/overlays/lab
+    path: lab/argocd/homeassistant/overlays/lab
     repoURL: https://github.com/phoracek/noplacelikehome.git
     targetRevision: HEAD
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true

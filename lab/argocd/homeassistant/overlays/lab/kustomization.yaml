@@ -3,6 +3,4 @@ kind: Kustomization
 resources:
 - ../../base
 patches:
-- path: argocd-wave.yaml
-- path: single-replica.yaml
-- path: expose-zigbee-dongle.yaml
+- path: set-static-ip.yaml

@@ -1,0 +1,34 @@
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  labels:
+    kubevirt.io/vm: homeassistant
+  name: homeassistant
+spec:
+  runStrategy: RerunOnFailure
+  template:
+    metadata:
+      labels:
+        kubevirt.io/vm: homeassistant
+    spec:
+      domain:
+        devices:
+          disks:
+          - disk:
+              bus: virtio
+            name: disk1
+          hostDevices:
+          - deviceName: kubevirt.io/zigbee
+            name: zigbee-dongle
+        firmware:
+          bootloader:
+            efi:
+              secureBoot: false
+        resources:
+          requests:
+            memory: 2000M
+      volumes:
+      - name: disk1
+        dataVolume:
+          name: homeassistant
+
