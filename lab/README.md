@@ -156,6 +156,8 @@ bluetooth_proxy:
 4. Save it and install it.
 5. Enable BTHome from HA Devices menu.
 
+I have issues with my ESP32 dev kit - the Bluetooth reception is very low.
+
 ### Flash temperature and humidity sensor
 
 Using <https://github.com/pvvx/ATC_MiThermometer>. Flashed from Chrome running on Windows - Android and Fedora struggle with Bluetooth.
