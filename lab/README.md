@@ -37,6 +37,7 @@ kubectl apply -f homeassistant-application.yaml
 # Enable File editor addon, show it in side panel, open configuration.yaml, add:
 # http:
 #   server_port: 80
+# Change IP configuration to static and give it IP 192.168.0.9/24 (until VLAN etc. is set up)
 kubectl apply -f argocd-application.yaml
 # TODO: File server for ISOs and stuff like that, so it does not have to be downloaded every time
 ```
@@ -50,13 +51,150 @@ kubectl get all
 # Test connectivity
 ```
 
-TODO:
-- update docs to open firewall for all
+Edit `/etc/hosts`:
+
+```
+192.168.0.9 assistant.local
+192.168.0.9 argocd.local
+```
+
+## Cheatsheet
+
+```
+cat <<EOF | kubectl create -f -
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: almalinux
+spec:
+  source:
+      http:
+         url: "https://repo.almalinux.org/almalinux/9.4/isos/x86_64/AlmaLinux-9.4-x86_64-minimal.iso"
+  storage:
+    volumeMode: Filesystem
+    resources:
+      requests:
+        storage: "3G"
+EOF
+```
+
+```
+cat <<EOF | kubectl create -f -
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: disk
+spec:
+  source:
+    blank: {}
+  storage:
+    resources:
+      requests:
+        storage: 20Gi
+EOF
+```
+
+```
+cat <<EOF | kubectl apply -f -
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  labels:
+    kubevirt.io/vm: desktop
+  name: desktop
+spec:
+  runStrategy: RerunOnFailure
+  template:
+    metadata:
+      labels:
+        kubevirt.io/vm: desktop
+    spec:
+      domain:
+        devices:
+          disks:
+          - disk:
+              bus: virtio
+            name: disk1
+          - disk:
+              bus: virtio
+            name: disk2
+            bootOrder: 1
+        resources:
+          requests:
+            memory: 2G
+      volumes:
+      - name: disk1
+        dataVolume:
+          name: disk
+      - name: disk2
+        dataVolume:
+          name: almalinux
+EOF
+```
+
+## Home assistant
+
+* Install ESPHome addon.
+
+### BLE to WiFi proxy
+
+1. Flash initial STM32 over USB.
+  * Connect it using data cable.
+  * `sudo chmod a+rw /dev/ttyUSB0` (TODO: Udev rule)
+  * <https://web.esphome.io/?dashboard_wizard> (TODO: HTTPs for HA)
+  * Connect and flash.
+2. Find it in ESPHome and claim it.
+3. Add this to the end of the config:
+  ```
+esp32_ble_tracker:
+scan_parameters:
+  interval: 1100ms
+  window: 1100ms
+    
+bluetooth_proxy:
+  ```
+4. Save it and install it.
+5. Enable BTHome from HA Devices menu.
+
+### Flash temperature and humidity sensor
+
+Using <https://github.com/pvvx/ATC_MiThermometer>. Flashed from Chrome running on Windows - Android and Fedora struggle with Bluetooth.
+
+1. Get Mi Temperature and Humidity Monitor 2.
+2. Go to <https://pvvx.github.io/ATC_MiThermometer/TelinkMiFlasher.html>.
+3. Tick Get advertising MAC.
+4. Filter LYWSD03.
+5. Connect.
+6. Do Activation.
+7. Copy the Token and Bind Key and save them in a safe location.
+8. Flash Custom Firmware ATC_v48.bin.
+9. Start Flashing.
+10. Filter ATC.
+11. Connect again.
+12. Name it MI<INDEX>.
+13. Set a PIN, write it on a piece of paper and place it under the sensor cover.
+14. Disconnect.
+
+### Add temporature and humidity sensor to HA
+
+1. Go to Devices.
+2. New BTHome sensor devices should be listed.
+3. Add them.
+
+### Create a graph of humidity and temperature
+
+1. Create a new dashboard.
+2. Add a Sensor card.
+3. Select Humidity or Temperature from the sensor.
+
+## TODO
 
 TODO:
+- update docs to open firewall for all
 - Disable ServiceLB and Klipper
 - Deploy Kuberentes Dashboard
 - Replace MetalLB Services with an Ingress where possible
 - Set static MAC for HA IOT interface and assign it with an IP
 - Put HA IOT interface on a VLAN
 - Expose HA running on IOT VLAN to MAIN VLAN over router
+- Give printer a static IP and allow IOT network's HA to access it
