@@ -158,7 +158,7 @@ bluetooth_proxy:
 
 I have issues with my ESP32 dev kit - the Bluetooth reception is very low.
 
-### Flash temperature and humidity sensor
+### Flash temperature and humidity sensor - BLE
 
 Using <https://github.com/pvvx/ATC_MiThermometer>. Flashed from Chrome running on Windows - Android and Fedora struggle with Bluetooth.
 
@@ -176,6 +176,23 @@ Using <https://github.com/pvvx/ATC_MiThermometer>. Flashed from Chrome running o
 12. Name it MI<INDEX>.
 13. Set a PIN, write it on a piece of paper and place it under the sensor cover.
 14. Disconnect.
+
+### Flash temperature and humidity sensor - Zigbee
+
+My BLE proxy has very weak signal reception. Try converting one of the sensors to the experimental Zigbee protocol, for which I have a proper receiver.
+
+Using <https://github.com/pvvx/ATC_MiThermometer>. Flashed from Chrome running on Windows - Android and Fedora struggle with Bluetooth.
+
+1. Get Mi Temperature and Humidity Monitor 2.
+2. Go to <https://pvvx.github.io/ATC_MiThermometer/TelinkMiFlasher.html>.
+5. Connect.
+6. Do Activation.
+7. Copy the Token and Bind Key and save them in a safe location.
+8. Flash Custom Firmware for Zigbee.
+9. Start Flashing.
+10. Remove and put back the battery.
+11. Bridge between the two pins next to the battery for 10 seconds to enter pairing mode.
+12. Register the device in HA's Zigbee administration.
 
 ### Add temporature and humidity sensor to HA
 
