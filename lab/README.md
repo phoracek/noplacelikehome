@@ -206,6 +206,25 @@ Using <https://github.com/pvvx/ATC_MiThermometer>. Flashed from Chrome running o
 2. Add a Sensor card.
 3. Select Humidity or Temperature from the sensor.
 
+### Downgrade firmware of Zigbee dongle
+
+Use <https://darkxst.github.io/silabs-firmware-builder/> to flash firmware from <https://github.com/itead/Sonoff_Zigbee_Dongle_Firmware/tree/master/Dongle-E/NCP>.
+
+Note: I'm not sure this was necessary.
+
+### Switch to Z2M
+
+1. Disconnect all devices from ZHA.
+2. Install the Z2M addon <https://github.com/zigbee2mqtt/hassio-zigbee2mqtt#installation>.
+3. Configure the dongle.
+
+Serial:
+
+```
+port: >-
+  /dev/serial/by-id/usb-ITEAD_SONOFF_Zigbee_3.0_USB_Dongle_Plus_V2_20240123101015-if00
+```
+
 ## TODO
 
 TODO:
