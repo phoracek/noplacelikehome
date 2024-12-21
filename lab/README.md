@@ -225,6 +225,96 @@ port: >-
   /dev/serial/by-id/usb-ITEAD_SONOFF_Zigbee_3.0_USB_Dongle_Plus_V2_20240123101015-if00
 ```
 
+### Install HACS
+
+<https://hacs.xyz/docs/use/download/download/#to-download-hacs>
+
+1. Install the addon.
+2. Run it.
+3. Restart HA.
+4. Add HACS device.
+
+### Install Better Thermostat
+
+<https://better-thermostat.org/>
+
+1. Install it from HACS.
+2. Install the UI too.
+3. Restart HA.
+
+# OPNSense
+
+```
+kubectl create namespace opnsense
+kubectl config set-context --current --namespace=opnsense
+```
+
+```
+cat <<EOF | kubectl create -f -
+apiVersion: k8s.cni.cncf.io/v1
+kind: NetworkAttachmentDefinition
+metadata:
+  name: wan
+spec:
+  config: |
+    {
+      "cniVersion": "0.3.1",
+      "name": "wan", 
+      "type": "bridge", 
+      "bridge": "br0", 
+      "macspoofchk": true, 
+      "disableContainerInterface": true
+    }
+EOF
+```
+
+```
+bzip2 -d OPNsense-24.7-nano-amd64.img.bz2
+virtctl image-upload dv opnsense --size=20Gi --image-path=OPNsense-24.7-nano-amd64.img --uploadproxy-url=https://127.0.0.1:8443 --force-bind --insecure
+```
+
+```
+cat <<EOF | kubectl apply -f -
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  labels:
+    kubevirt.io/vm: opnsense
+  name: opnsense
+spec:
+  runStrategy: RerunOnFailure
+  template:
+    metadata:
+      labels:
+        kubevirt.io/vm: opnsense
+    spec:
+      domain:
+        devices:
+          disks:
+          - disk:
+              bus: virtio
+            name: disk1
+          interfaces:
+          - name: lan
+            masquerade: {}
+          - name: wan
+            bridge: {}
+        resources:
+          requests:
+            memory: 1G
+      networks:
+      - name: lan
+        pod: {}
+      - name: wan
+        multus:
+          networkName: wan
+      volumes:
+      - name: disk1
+        dataVolume:
+          name: opnsense
+EOF
+```
+
 ## TODO
 
 TODO:
