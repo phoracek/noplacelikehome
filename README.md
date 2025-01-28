@@ -49,7 +49,7 @@ sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.
 cp zsh/zshrc ~/.zshrc
 
 # Helix
-curl -L https://github.com/helix-editor/helix/releases/download/24.07/helix-24.07-x86_64.AppImage -o /tmp/hx
+curl -L https://github.com/helix-editor/helix/releases/download/25.01/helix-25.01-x86_64.AppImage -o /tmp/hx
 cp -r ./helix/* ~/.config/helix
 chmod +x /tmp/hx
 sudo mv /tmp/hx /usr/bin
