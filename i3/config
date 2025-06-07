@@ -159,6 +159,8 @@ bindsym $mod+Shift+r restart
 # exit i3 (logs you out of your X session)
 bindsym $mod+Shift+e exec "i3-nagbar -t warning -m 'You pressed the exit shortcut. Do you really want to exit i3? This will end your X session.' -B 'Yes, exit i3' 'i3-msg exit'"
 
+bindsym $mod+Shift+p exec "sh -c 'xrandr --output DP-1-3 --off ; xrandr --output DP-1-3 --auto'"
+
 # resize window (you can also use the mouse for that)
 mode "resize" {
         # These bindings trigger as soon as you enter the resize mode
@@ -185,6 +187,10 @@ mode "resize" {
 }
 
 bindsym $mod+r mode "resize"
+
+bindsym $mod+Shift+Return exec --no-startup-id alacritty --class floating --command note
+for_window [class="floating"] floating enabled move position center
+for_window [class="floating"] border pixel 2
 
 # Work with pomodoro timer
 mode "pomodoro [w]ork [b]reak [s]top" {
