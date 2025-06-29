@@ -1,0 +1,14 @@
+# Udev rule for monitor hotplug detection and lid events
+# This rule triggers when display devices are connected/disconnected OR when lid is opened/closed
+
+# Match DRM (Direct Rendering Manager) events for display connectors
+KERNEL=="card[0-9]*", SUBSYSTEM=="drm", ENV{HOTPLUG}=="1", RUN+="/home/phoracek/.config/i3/monitor-setup.sh"
+
+# Alternative rule for specific connector types
+SUBSYSTEM=="drm", ACTION=="change", RUN+="/home/phoracek/.config/i3/monitor-setup.sh"
+
+# Match ACPI lid events (open/close)
+SUBSYSTEM=="acpi", KERNEL=="button/lid*", RUN+="/home/phoracek/.config/i3/monitor-setup.sh"
+
+# Alternative ACPI event matching
+SUBSYSTEM=="acpi", ACTION=="change", DEVPATH=="*/button/lid*", RUN+="/home/phoracek/.config/i3/monitor-setup.sh"

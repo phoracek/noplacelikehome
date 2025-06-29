@@ -43,7 +43,11 @@ sudo chmod 4775 /usr/bin/backlight
 cp ./i3/config ~/.config/i3/config
 cp ./i3/status.sh ~/.config/i3/status.sh
 cp ./i3/pomodoro.sh ~/.config/i3/pomodoro.sh
-cp ./i3/note.sh /usr/bin/note
+sudo cp ./i3/note.sh /usr/bin/note
+cp ./i3/monitor-setup.sh ~/.config/i3/monitor-setup.sh
+sudo cp ./i3/99-monitor-hotplug.rules /etc/udev/rules.d/
+sudo udevadm control --reload-rules
+sudo udevadm trigger
 
 # Zsh config
 sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
