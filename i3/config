@@ -200,17 +200,7 @@ mode "pomodoro [w]ork [b]reak [s]top" {
 }
 
 bindsym $mod+o mode "pomodoro [w]ork [b]reak [s]top"
-
-# Work with pomodoro timer
-mode "tasks [p]ush p[o]p" {
-        bindsym p exec "~/.config/i3/tasks.sh push && i3-msg mode default"
-        bindsym o exec "~/.config/i3/tasks.sh pop && i3-msg mode default"
-        bindsym Return mode "default"
-        bindsym Escape mode "default"
-}
-
-bindsym $mod+t mode "tasks [p]ush p[o]p"
-bindsym $mod+Shift+t exec --no-startup-id alacritty --class floating --command ~/.config/i3/tasks.sh edit
+bindsym $mod+Shift+O exec --no-startup-id alacritty --class floating --command ~/.config/i3/tasks.sh edit
 
 # Per-application config, use `xprop` to find the class:
 for_window [class="Alacritty"] border pixel 2
