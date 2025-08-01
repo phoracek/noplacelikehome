@@ -22,4 +22,4 @@ cursor-line = "error"
 # other-lines = "error"
 
 [keys.normal]
-space.t = ":insert-output date +\"%B %d, %Y\""
+space.t = ":insert-output date +\"%%B %%d, %%Y\""
