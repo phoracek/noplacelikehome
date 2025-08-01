@@ -189,8 +189,6 @@ mode "resize" {
 bindsym $mod+r mode "resize"
 
 bindsym $mod+Shift+Return exec --no-startup-id alacritty --class floating --command note
-for_window [class="floating"] floating enabled move position center
-for_window [class="floating"] border pixel 2
 
 # Work with pomodoro timer
 mode "pomodoro [w]ork [b]reak [s]top" {
@@ -203,6 +201,17 @@ mode "pomodoro [w]ork [b]reak [s]top" {
 
 bindsym $mod+o mode "pomodoro [w]ork [b]reak [s]top"
 
+# Work with pomodoro timer
+mode "tasks [p]ush p[o]p" {
+        bindsym p exec "~/.config/i3/tasks.sh push && i3-msg mode default"
+        bindsym o exec "~/.config/i3/tasks.sh pop && i3-msg mode default"
+        bindsym Return mode "default"
+        bindsym Escape mode "default"
+}
+
+bindsym $mod+t mode "tasks [p]ush p[o]p"
+bindsym $mod+Shift+t exec --no-startup-id alacritty --class floating --command ~/.config/i3/tasks.sh edit
+
 # Per-application config, use `xprop` to find the class:
 for_window [class="Alacritty"] border pixel 2
 for_window [class="firefox"] border pixel 0
@@ -210,6 +219,8 @@ for_window [class="Logseq"] border pixel 0
 for_window [class="Emacs"] border pixel 0
 for_window [class="vlc"] border pixel 0
 for_window [class="todoist"] border pixel 0
+for_window [class="floating"] floating enabled move position center
+for_window [class="floating"] border pixel 2
 
 # don't focus mouse
 focus_follows_mouse no

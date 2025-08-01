@@ -32,5 +32,18 @@ memory_available=$(free -h | awk 'FNR==2{print $7}')
 # Pomodoro utility
 pomodoro=$(~/.config/i3/pomodoro.sh status)
 
+# Add first task to pomodoro if working
+first_task=$(~/.config/i3/tasks.sh list | head -n 1)
+if [ "$pomodoro" = "work" ]; then
+    pomodoro="work ($first_task)"
+fi
+
 # Build the status bar
-echo "$date_formatted                                                                                     ${pomodoro} ${memory_available} ${storage_available} ${battery_available}%"
+status_right="${pomodoro} ${memory_available} ${storage_available} ${battery_available}%"
+total_length=$((${#date_formatted} + ${#status_right}))
+spaces_needed=$((122 - total_length))
+if [ $spaces_needed -lt 0 ]; then
+    spaces_needed=0
+fi
+padding=$(printf "%*s" $spaces_needed "")
+echo "${date_formatted}${padding}${status_right}"
