@@ -18,8 +18,9 @@ git config --global user.email "youremail@yourdomain.com"
 
 # Automatic upgrades
 sudo dnf install -y dnf-automatic
-sudo systemctl enable dnf-automatic-install.timer
-sudo systemctl start dnf-automatic-install.timer
+sudo sed -i 's/^apply_updates *= *no/apply_updates = yes/' /etc/dnf/automatic.conf
+sudo systemctl enable dnf-automatic.timer
+sudo systemctl start dnf-automatic.timer
 
 # Rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
