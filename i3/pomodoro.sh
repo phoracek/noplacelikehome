@@ -29,7 +29,7 @@ function status {
   if [ -f "${WORK}" ]; then
     elapsed=$(time_since_touched ${WORK})
     if ((elapsed < 25 * 60)); then
-      echo "            work"
+      echo "work"
     else
       dunstify "Time for a break"
       echo "time for a break"
@@ -37,13 +37,11 @@ function status {
   elif [ -f "${BREAK}" ]; then
     elapsed=$(time_since_touched ${BREAK})
     if ((elapsed < 5 * 60)); then
-      echo "           break"
+      echo "break"
     else
       dunstify "Time to work"
-      echo "    time to work"
+      echo "time to work"
     fi
-  else
-    echo "                "
   fi
 }
 
