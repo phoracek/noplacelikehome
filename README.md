@@ -22,6 +22,10 @@ sudo sed -i 's/^apply_updates *= *no/apply_updates = yes/' /etc/dnf/automatic.co
 sudo systemctl enable dnf-automatic.timer
 sudo systemctl start dnf-automatic.timer
 
+# Zsh config
+sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+cp zsh/zshrc ~/.zshrc
+
 # Rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ~/.cargo/bin/rustup component add rust-analyzer
@@ -30,11 +34,13 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 sudo dnf groupinstall -y "C Development Tools And Libraries"
 
 # Go
-curl -O -L https://go.dev/dl/go1.23.2.linux-amd64.tar.gz
+curl -O -L https://go.dev/dl/go1.24.5.linux-amd64.tar.gz
 mkdir -p ~/.local/go
-tar -C ~/.local -xzf go1.23.2.linux-amd64.tar.gz
-rm -f go1.23.2.linux-amd64.tar.gz
+tar -C ~/.local -xzf go1.24.5.linux-amd64.tar.gz
+rm -f go1.24.5.linux-amd64.tar.gz
 ~/.local/go/bin/go install golang.org/x/tools/gopls@latest
+~/.local/go/bin/go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.3.0
+~/.local/go/bin/go install github.com/nametake/golangci-lint-langserver@latest
 
 # i3 config
 ~/.cargo/bin/rustc ./i3/backlight.rs -o /tmp/backlight
@@ -50,10 +56,6 @@ cp ./i3/monitor-setup.sh ~/.config/i3/monitor-setup.sh
 sudo cp ./i3/99-monitor-hotplug.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules
 sudo udevadm trigger
-
-# Zsh config
-sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
-cp zsh/zshrc ~/.zshrc
 
 # Helix
 curl -L https://github.com/helix-editor/helix/releases/download/25.07.1/helix-25.07.1-x86_64.AppImage -o /tmp/hx
