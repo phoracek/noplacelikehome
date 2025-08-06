@@ -161,6 +161,9 @@ bindsym $mod+Shift+e exec "i3-nagbar -t warning -m 'You pressed the exit shortcu
 
 bindsym $mod+Shift+p exec "sh -c 'xrandr --output DP-1-3 --off ; xrandr --output DP-1-3 --auto'"
 
+# dismiss notifications
+bindsym Control+space exec --no-startup-id dunstctl close
+
 # resize window (you can also use the mouse for that)
 mode "resize" {
         # These bindings trigger as soon as you enter the resize mode
