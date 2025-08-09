@@ -15,6 +15,7 @@ boltctl enroll <domain>
 # Git
 git config --global user.name "Your Name"
 git config --global user.email "youremail@yourdomain.com"
+git config --global alias.commit "commit -s"
 
 # Automatic upgrades
 sudo dnf install -y dnf-automatic
@@ -79,4 +80,9 @@ sudo dnf install -y https://download1.rpmfusion.org/free/fedora/rpmfusion-free-r
 sudo dnf install -y https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm
 sudo dnf install -y intel-media-driver compat-ffmpeg4 
 sudo dnf swap ffmpeg-free ffmpeg --allowerasing
+
+# Taskwarrior
+sudo dnf install timew task
+mkdir -p ~/.task/hooks
+cp taskwarrior/on-modify.timewarrior ~/.task/hooks
 ```
