@@ -82,7 +82,8 @@ sudo dnf install -y intel-media-driver compat-ffmpeg4
 sudo dnf swap ffmpeg-free ffmpeg --allowerasing
 
 # Taskwarrior
-sudo dnf install timew task
+sudo dnf install timew task taskopen
 mkdir -p ~/.task/hooks
 cp taskwarrior/on-modify.timewarrior ~/.task/hooks
+cp taskwarrior/zsh-prompt.sh ~/.local/share/tsh.sh
 ```
