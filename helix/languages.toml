@@ -9,5 +9,3 @@ rulers = [81]
 [[language]]
 name = "markdown"
 rulers = [81]
-auto-format = true
-formatter = { command = "sh", args = ["-c", "rumdl check --fix --stdin --silent --disable MD013; cat %{buffer_name}"]}
