@@ -65,6 +65,11 @@ chmod +x /tmp/hx
 sudo mv /tmp/hx /usr/bin
 hx --health
 
+# Markdown
+curl -L https://github.com/artempyanykh/marksman/releases/download/2024-12-18/marksman-linux-x64 -o /tmp/marksman
+chmod +x /tmp/marksman
+sudo mv /tmp/marksman /usr/bin
+
 # Virtualization
 sudo dnf install -y virt-manager virt-install libvirt
 sudo systemctl start libvirtd
