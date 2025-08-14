@@ -10,4 +10,4 @@ rulers = [81]
 name = "markdown"
 rulers = [81]
 auto-format = true
-formatter = { command = "rumdl", args = ["check", "--fix", "--stdin", "--disable", "MD013"]}
+formatter = { command = "sh", args = ["-c", "rumdl check --fix --stdin --silent --disable MD013; cat %{buffer_name}"]}
