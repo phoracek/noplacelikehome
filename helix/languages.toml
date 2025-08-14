@@ -5,3 +5,9 @@ procMacro = { enable = true }
 [[language]]
 name = "latex"
 rulers = [81]
+
+[[language]]
+name = "markdown"
+rulers = [81]
+auto-format = true
+formatter = { command = "rumdl", args = ["check", "--fix", "--stdin", "--disable", "MD013"]}

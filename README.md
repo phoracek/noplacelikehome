@@ -69,6 +69,7 @@ hx --health
 curl -L https://github.com/artempyanykh/marksman/releases/download/2024-12-18/marksman-linux-x64 -o /tmp/marksman
 chmod +x /tmp/marksman
 sudo mv /tmp/marksman /usr/bin
+cargo install rumdl
 
 # Virtualization
 sudo dnf install -y virt-manager virt-install libvirt

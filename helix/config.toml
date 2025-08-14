@@ -13,6 +13,7 @@ select = "block"
 
 [editor.soft-wrap]
 enable = true
+wrap-at-text-width = true
 
 [editor.inline-diagnostics]
 # Minimum severity to show a diagnostic on the primary cursor's line.
