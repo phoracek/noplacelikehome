@@ -9,7 +9,6 @@
           - podman
           - firewalld
           - avahi
-          - nss-mdns
         state: present
 
     - name: Enable avahi-daemon (advertises <hostname>.local via mDNS)
