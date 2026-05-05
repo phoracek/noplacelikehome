@@ -1,0 +1,19 @@
+[Unit]
+Description=Mosquitto MQTT broker
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=docker.io/library/eclipse-mosquitto:2
+ContainerName=mosquitto
+Network=host
+Volume=/var/lib/homelab/mosquitto/config:/mosquitto/config:ro,Z
+Volume=/var/lib/homelab/mosquitto/data:/mosquitto/data:Z
+Volume=/var/lib/homelab/mosquitto/log:/mosquitto/log:Z
+AutoUpdate=registry
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=multi-user.target default.target

@@ -1,0 +1,82 @@
+---
+- name: Deploy Quadlet container units
+  hosts: server
+  become: yes
+  vars:
+    quadlet_dir: /etc/containers/systemd
+    systemd_dir: /etc/systemd/system
+    quadlet_units:
+      - mosquitto
+      - zigbee2mqtt
+      - homeassistant
+      - clouds-over-czechoslovakia
+      - clouds-over-czechoslovakia-server
+      - dashy
+      - glances
+      - pairdrop
+    long_running_units:
+      - mosquitto
+      - zigbee2mqtt
+      - homeassistant
+      - clouds-over-czechoslovakia-server
+      - dashy
+      - glances
+      - pairdrop
+    systemd_timers:
+      - clouds-over-czechoslovakia
+  tasks:
+    - name: Ensure quadlet directory exists
+      ansible.builtin.file:
+        path: "{{ quadlet_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install Quadlet container units
+      ansible.builtin.copy:
+        src: "../quadlet/{{ item }}.container"
+        dest: "{{ quadlet_dir }}/{{ item }}.container"
+        owner: root
+        group: root
+        mode: "0644"
+      loop: "{{ quadlet_units }}"
+      register: quadlet_files
+
+    - name: Install systemd timer units
+      ansible.builtin.copy:
+        src: "files/systemd/{{ item }}.timer"
+        dest: "{{ systemd_dir }}/{{ item }}.timer"
+        owner: root
+        group: root
+        mode: "0644"
+      loop: "{{ systemd_timers }}"
+      register: timer_files
+
+    - name: Reload systemd to pick up Quadlet/timer changes
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+      when: quadlet_files.changed or timer_files.changed
+
+    - name: Start long-running container services
+      ansible.builtin.systemd_service:
+        name: "{{ item }}.service"
+        state: started
+        enabled: false
+      loop: "{{ long_running_units }}"
+
+    - name: Restart long-running services if their unit changed
+      ansible.builtin.systemd_service:
+        name: "{{ item.item }}.service"
+        state: restarted
+      loop: "{{ quadlet_files.results }}"
+      when: item.changed and item.item in long_running_units
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Enable and start systemd timers
+      ansible.builtin.systemd_service:
+        name: "{{ item }}.timer"
+        state: started
+        enabled: true
+      loop: "{{ systemd_timers }}"

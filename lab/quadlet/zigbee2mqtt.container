@@ -1,0 +1,24 @@
+[Unit]
+Description=Zigbee2MQTT
+After=network-online.target mosquitto.service
+Wants=network-online.target
+Requires=mosquitto.service
+
+[Container]
+# Pinned to last 1.x release: it ships the legacy `ezsp` driver, which
+# supports EZSP v8 firmware on older Sonoff Plus V2 dongles. Z2M v2
+# dropped that driver. Do not raise this tag without flashing the
+# dongle to EmberZNet 7.x first.
+Image=docker.io/koenkk/zigbee2mqtt:1.42.0
+ContainerName=zigbee2mqtt
+Network=host
+Volume=/var/lib/homelab/zigbee2mqtt:/app/data:Z
+Volume=/run/udev:/run/udev:ro
+AddDevice=/dev/serial/by-id/usb-ITEAD_SONOFF_Zigbee_3.0_USB_Dongle_Plus_V2_20240123101015-if00:/dev/serial/by-id/usb-ITEAD_SONOFF_Zigbee_3.0_USB_Dongle_Plus_V2_20240123101015-if00
+Environment=TZ=Europe/Prague
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=multi-user.target default.target

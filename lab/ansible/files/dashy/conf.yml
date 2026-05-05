@@ -1,0 +1,58 @@
+pageInfo:
+  title: micro01
+  description: Home lab dashboard
+  navLinks: []
+
+appConfig:
+  theme: nord-frost
+  layout: auto
+  iconSize: medium
+  language: en
+  statusCheck: true
+  hideComponents:
+    hideSettings: false
+
+sections:
+  - name: Home
+    icon: fas fa-home
+    items:
+      - title: Home Assistant
+        description: Home automation
+        icon: hl-home-assistant
+        url: http://192.168.0.248:8123
+        target: newtab
+        statusCheckUrl: http://192.168.0.248:8123
+
+      - title: Zigbee2MQTT
+        description: Zigbee bridge
+        icon: hl-zigbee2mqtt
+        url: http://192.168.0.248:8124
+        target: newtab
+        statusCheckUrl: http://192.168.0.248:8124
+
+      - title: Clouds over Czechoslovakia
+        description: Satellite cloud cover
+        icon: fas fa-cloud-sun
+        url: http://192.168.0.248:8125/view-dithered.png
+        target: newtab
+        statusCheckUrl: http://192.168.0.248:8125/view-dithered.png
+
+      - title: Glances
+        description: Host metrics
+        icon: fas fa-chart-line
+        url: http://192.168.0.248:61208
+        target: newtab
+        statusCheckUrl: http://192.168.0.248:61208
+
+      - title: PairDrop
+        description: LAN file drop
+        icon: fas fa-share-square
+        url: http://192.168.0.248:8127
+        target: newtab
+        statusCheckUrl: http://192.168.0.248:8127
+
+      - title: Router
+        description: Home router (kabelbox)
+        icon: fas fa-network-wired
+        url: http://kabelbox.local
+        target: newtab

@@ -1,0 +1,2 @@
+# Sonoff Zigbee 3.0 USB Dongle Plus V2 (CH9102 USB-serial bridge, 1a86:55d4)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d4", GROUP="dialout", MODE="0660", SYMLINK+="zigbee"

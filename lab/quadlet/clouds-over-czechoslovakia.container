@@ -1,0 +1,13 @@
+[Unit]
+Description=Clouds over Czechoslovakia (regenerate artifacts)
+
+[Container]
+Image=ghcr.io/phoracek/clouds-over-czechoslovakia:latest
+ContainerName=clouds-over-czechoslovakia
+Volume=/var/lib/homelab/clouds-over-czechoslovakia:/opt/artifacts:z
+AutoUpdate=registry
+Entrypoint=/opt/clouds/entrypoint.sh
+Exec=/opt/artifacts
+
+[Service]
+TimeoutStartSec=10min
