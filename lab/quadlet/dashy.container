@@ -8,6 +8,7 @@ Image=ghcr.io/lissy93/dashy:latest
 ContainerName=dashy
 PublishPort=80:8080
 Volume=/var/lib/homelab/dashy/conf.yml:/app/user-data/conf.yml:Z
+AddHost=home.local:host-gateway
 AutoUpdate=registry
 
 [Service]
