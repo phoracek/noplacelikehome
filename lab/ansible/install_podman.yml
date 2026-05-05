@@ -3,12 +3,20 @@
   hosts: server
   become: yes
   tasks:
-    - name: Install podman
+    - name: Install podman and avahi
       ansible.builtin.dnf:
         name:
           - podman
           - firewalld
+          - avahi
+          - nss-mdns
         state: present
+
+    - name: Enable avahi-daemon (advertises <hostname>.local via mDNS)
+      ansible.builtin.systemd_service:
+        name: avahi-daemon.service
+        state: started
+        enabled: true
 
     - name: Enable podman auto-update timer
       ansible.builtin.systemd_service:
@@ -98,19 +106,26 @@
         state: started
         enabled: true
 
-    - name: Open firewall ports for Home Assistant and Zigbee2MQTT
+    - name: Open firewall ports for the homelab services
       ansible.posix.firewalld:
         port: "{{ item }}"
         permanent: true
         immediate: true
         state: enabled
       loop:
+        - 80/tcp
         - 8123/tcp
         - 8124/tcp
         - 8125/tcp
-        - 8126/tcp
         - 8127/tcp
         - 61208/tcp
+
+    - name: Allow mDNS through firewalld so home.local resolves on the LAN
+      ansible.posix.firewalld:
+        service: mdns
+        permanent: true
+        immediate: true
+        state: enabled
 
   handlers:
     - name: Restart dashy

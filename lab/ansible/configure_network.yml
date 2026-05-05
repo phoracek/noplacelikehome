@@ -5,4 +5,4 @@
   tasks:
     - name: Set a hostname
       ansible.builtin.hostname:
-        name: micro01
+        name: home

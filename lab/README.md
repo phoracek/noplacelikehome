@@ -31,25 +31,24 @@ After `deploy_containers.yml`, the following systemd services are running on the
 
 | Service | URL | Purpose |
 |---------|-----|---------|
-| `dashy.service`         | <http://192.168.0.248:8126> | Dashboard linking everything below |
-| `homeassistant.service` | <http://192.168.0.248:8123> | Home Assistant Core |
-| `zigbee2mqtt.service`   | <http://192.168.0.248:8124> | Zigbee2MQTT web UI |
-| `clouds-over-czechoslovakia-server.service` | <http://192.168.0.248:8125> | Clouds over Czechoslovakia (artifacts served by nginx) |
+| `dashy.service`         | <http://home.local> | Dashboard linking everything below |
+| `homeassistant.service` | <http://home.local:8123> | Home Assistant Core |
+| `zigbee2mqtt.service`   | <http://home.local:8124> | Zigbee2MQTT web UI |
+| `clouds-over-czechoslovakia-server.service` | <http://home.local:8125> | Clouds over Czechoslovakia (artifacts served by nginx) |
 | `clouds-over-czechoslovakia.timer` | (every 10 min) | Regenerates the artifacts via the upstream image |
-| `glances.service`       | <http://192.168.0.248:61208> | Host metrics |
-| `pairdrop.service`      | <http://192.168.0.248:8127> | LAN file drop (AirDrop-style) |
+| `glances.service`       | <http://home.local:61208> | Host metrics |
+| `pairdrop.service`      | <http://home.local:8127> | LAN file drop (AirDrop-style) |
 | `mosquitto.service`     | `127.0.0.1:1883` (host-local) | MQTT broker |
 
-Optional `/etc/hosts` entry on a workstation:
-
-```
-192.168.0.248 assistant.local
-```
+The host advertises itself as `home.local` over mDNS via `avahi-daemon`,
+so any LAN client with an mDNS resolver (Linux with `nss-mdns`, macOS,
+Windows, Android, iOS) can reach the services by name. Falls back to
+the host's IP if mDNS is unavailable.
 
 ## First-time configuration
 
-1. Open <http://192.168.0.248:8123> and complete the HA onboarding wizard.
-2. Open <http://192.168.0.248:8124> to access Zigbee2MQTT. The dongle is wired
+1. Open <http://home.local:8123> and complete the HA onboarding wizard.
+2. Open <http://home.local:8124> to access Zigbee2MQTT. The dongle is wired
    in via the Quadlet unit; pair devices from this UI.
 3. In Home Assistant, add the **MQTT** integration (Settings → Devices &
    services → Add integration → MQTT). Broker: `127.0.0.1`. Port: `1883`. No
@@ -137,7 +136,7 @@ Zigbee firmware to use the Sonoff dongle instead.
 7. Start flashing.
 8. Remove and reinsert the battery.
 9. Bridge the two pins next to the battery for 10 seconds to enter pairing mode.
-10. In Zigbee2MQTT (<http://192.168.0.248:8124>), enable "Permit join" and let
+10. In Zigbee2MQTT (<http://home.local:8124>), enable "Permit join" and let
     the device pair. The MQTT discovery will surface it in Home Assistant.
 
 ### Add temperature and humidity sensor to HA
