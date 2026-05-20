@@ -9,7 +9,14 @@
           - podman
           - firewalld
           - avahi
+          - chrony
         state: present
+
+    - name: Enable chronyd (Joplin Server rejects host clock drift > 2s)
+      ansible.builtin.systemd_service:
+        name: chronyd.service
+        state: started
+        enabled: true
 
     - name: Enable avahi-daemon (advertises <hostname>.local via mDNS)
       ansible.builtin.systemd_service:
@@ -20,6 +27,55 @@
     - name: Enable podman auto-update timer
       ansible.builtin.systemd_service:
         name: podman-auto-update.timer
+        state: started
+        enabled: true
+
+    - name: Create podman-users group (fixed GID for socket access by forgejo-runner)
+      ansible.builtin.group:
+        name: podman-users
+        gid: 980
+        system: true
+        state: present
+
+    - name: Ensure podman.socket drop-in directory exists
+      ansible.builtin.file:
+        path: /etc/systemd/system/podman.socket.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Drop-in to gate podman.socket behind the podman-users group
+      # The runner container runs as a non-root user but needs to reach
+      # the rootful Podman socket. Default ownership is root:root 0660,
+      # so we move the group to podman-users (GID 980) and the runner
+      # Quadlet picks that GID up via GroupAdd=980. The socket stays
+      # unreadable to everyone else on the host.
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/podman.socket.d/override.conf
+        content: |
+          [Socket]
+          SocketMode=0660
+          SocketGroup=podman-users
+        owner: root
+        group: root
+        mode: "0644"
+      register: podman_socket_override
+
+    - name: Reload systemd if podman.socket drop-in changed
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+      when: podman_socket_override.changed
+
+    - name: Restart podman.socket if its drop-in changed
+      ansible.builtin.systemd_service:
+        name: podman.socket
+        state: restarted
+      when: podman_socket_override.changed
+
+    - name: Enable the rootful Podman API socket (used by forgejo-runner)
+      ansible.builtin.systemd_service:
+        name: podman.socket
         state: started
         enabled: true
 
@@ -40,6 +96,12 @@
         - /var/lib/homelab/mosquitto/config
         - /var/lib/homelab/mosquitto/data
         - /var/lib/homelab/mosquitto/log
+        - /var/lib/homelab/joplin
+        - /var/lib/homelab/forgejo
+        - /var/lib/homelab/forgejo/gitea
+        - /var/lib/homelab/forgejo/git
+        - /var/lib/homelab/forgejo/var
+        - /var/lib/homelab/forgejo-runner
 
     - name: Install Dashy configuration
       ansible.builtin.copy:
@@ -71,6 +133,63 @@
         - /var/lib/homelab/mosquitto/data
         - /var/lib/homelab/mosquitto/log
       notify: Restart mosquitto
+
+    - name: Own joplin data dir to the in-container joplin user (UID 1001)
+      # joplin/server is based on node:24-slim, which ships with a `node`
+      # user at UID 1000. The image then `useradd`s `joplin` without -u,
+      # so the joplin process runs as UID 1001, not 1000.
+      ansible.builtin.file:
+        path: /var/lib/homelab/joplin
+        state: directory
+        owner: "1001"
+        group: "1001"
+        mode: "0755"
+        recurse: true
+      notify: Restart joplin-server
+
+    - name: Own forgejo data dirs to the in-container git user (UID 1000)
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "1000"
+        group: "1000"
+        mode: "0755"
+        recurse: true
+      loop:
+        - /var/lib/homelab/forgejo/gitea
+        - /var/lib/homelab/forgejo/git
+        - /var/lib/homelab/forgejo/var
+      notify: Restart forgejo
+
+    - name: Own forgejo-runner data dir to the in-container runner user (UID 1000)
+      # The runner needs to write under /data (its action cache, workflow
+      # workdirs, etc.). The mount source on the host is owned root:root
+      # 0755 by the create-dirs loop, so the in-container UID 1000 user
+      # can't mkdir there. Non-recursive on purpose — once the cache is
+      # populated by the runner itself (as UID 1000), Ansible doesn't
+      # need to re-touch it on every play.
+      ansible.builtin.file:
+        path: /var/lib/homelab/forgejo-runner
+        state: directory
+        owner: "1000"
+        group: "1000"
+        mode: "0755"
+      notify: Restart forgejo-runner
+
+    - name: Install forgejo-runner config (skipped until secrets are set in group_vars/server.yml)
+      ansible.builtin.template:
+        src: templates/forgejo-runner/config.yml.j2
+        dest: /var/lib/homelab/forgejo-runner/config.yml
+        owner: "1000"
+        group: "1000"
+        mode: "0600"
+      when:
+        - forgejo_runner_uuid is defined
+        - forgejo_runner_token is defined
+        - forgejo_runner_uuid != "PASTE_UUID_HERE"
+        - forgejo_runner_token != "PASTE_TOKEN_HERE"
+      no_log: true
+      notify: Restart forgejo-runner
 
     - name: Seed Zigbee2MQTT configuration (skips the v2 onboarding wizard)
       ansible.builtin.copy:
@@ -117,7 +236,9 @@
         - 8124/tcp
         - 8125/tcp
         - 8127/tcp
+        - 22300/tcp
         - 61208/tcp
+        - 8128/tcp
 
     - name: Allow mDNS through firewalld so home.local resolves on the LAN
       ansible.posix.firewalld:
@@ -142,5 +263,23 @@
     - name: Restart zigbee2mqtt
       ansible.builtin.systemd_service:
         name: zigbee2mqtt.service
+        state: restarted
+      failed_when: false
+
+    - name: Restart joplin-server
+      ansible.builtin.systemd_service:
+        name: joplin-server.service
+        state: restarted
+      failed_when: false
+
+    - name: Restart forgejo
+      ansible.builtin.systemd_service:
+        name: forgejo.service
+        state: restarted
+      failed_when: false
+
+    - name: Restart forgejo-runner
+      ansible.builtin.systemd_service:
+        name: forgejo-runner.service
         state: restarted
       failed_when: false

@@ -1,0 +1,9 @@
+# Copy this file to ansible/group_vars/server.yml and fill in real values.
+# The real file is gitignored — credentials never enter the repo.
+#
+# Generate the UUID and token in Forgejo:
+#   Site Administration -> Actions -> Runners -> "Create new runner"
+# The token is shown only once on that page.
+
+forgejo_runner_uuid: "PASTE_UUID_HERE"
+forgejo_runner_token: "PASTE_TOKEN_HERE"

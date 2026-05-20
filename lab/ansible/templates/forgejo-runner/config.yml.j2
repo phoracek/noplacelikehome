@@ -1,0 +1,14 @@
+log:
+  level: info
+
+server:
+  connections:
+    forgejo:
+      url: http://home.local:8128/
+      uuid: {{ forgejo_runner_uuid }}
+      token: {{ forgejo_runner_token }}
+
+runner:
+  labels:
+    - docker:docker://node:20-bookworm
+    - ubuntu-latest:docker://node:20-bookworm

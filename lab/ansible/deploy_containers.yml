@@ -14,6 +14,9 @@
       - dashy
       - glances
       - pairdrop
+      - joplin-server
+      - forgejo
+      - forgejo-runner
     long_running_units:
       - mosquitto
       - zigbee2mqtt
@@ -22,6 +25,8 @@
       - dashy
       - glances
       - pairdrop
+      - joplin-server
+      - forgejo
     systemd_timers:
       - clouds-over-czechoslovakia
   tasks:
@@ -80,3 +85,13 @@
         state: started
         enabled: true
       loop: "{{ systemd_timers }}"
+
+    - name: Start forgejo-runner once its credentials are configured
+      ansible.builtin.systemd_service:
+        name: forgejo-runner.service
+        state: started
+      when:
+        - forgejo_runner_uuid is defined
+        - forgejo_runner_token is defined
+        - forgejo_runner_uuid != "PASTE_UUID_HERE"
+        - forgejo_runner_token != "PASTE_TOKEN_HERE"

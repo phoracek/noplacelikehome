@@ -1,0 +1,22 @@
+[Unit]
+Description=Joplin Server
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=docker.io/joplin/server:latest
+ContainerName=joplin-server
+PublishPort=22300:22300
+Volume=/var/lib/homelab/joplin:/joplin-data:Z
+Environment=APP_PORT=22300
+Environment=APP_BASE_URL=http://home.local:22300
+Environment=DB_CLIENT=sqlite3
+Environment=SQLITE_DATABASE=/joplin-data/db.sqlite
+Environment=TZ=Europe/Prague
+AutoUpdate=registry
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=multi-user.target default.target
