@@ -13,7 +13,7 @@
 # before you've cut the token in Forgejo.
 
 forgejo_runners:
-  - name: forgejo-runner
+  - name: forgejo-runner-1
     uuid: "PASTE_UUID_HERE"
     token: "PASTE_TOKEN_HERE"
   - name: forgejo-runner-2

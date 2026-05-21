@@ -41,7 +41,7 @@ After `deploy_containers.yml`, the following systemd services are running on the
 | `pairdrop.service`      | <http://home.local:8127> | LAN file drop (AirDrop-style) |
 | `joplin-server.service` | <http://home.local:22300> | Joplin Server (notes sync) |
 | `forgejo.service`       | <http://home.local:8128> | Forgejo Git service |
-| `forgejo-runner.service` | (worker, no UI) | Forgejo Actions runner |
+| `forgejo-runner-1.service`, `forgejo-runner-2.service` | (workers, no UI) | Forgejo Actions runners — one systemd unit per entry in `forgejo_runners` |
 | `pages.service`         | <http://home.local:8129> | Static-site hosting (published by Forgejo Actions) |
 | `mosquitto.service`     | `127.0.0.1:1883` (host-local) | MQTT broker |
 
@@ -112,7 +112,7 @@ and that lookup would otherwise hit the LAN DNS server and fail.
 
 ```sh
 # Status
-sudo systemctl status dashy homeassistant mosquitto zigbee2mqtt clouds-over-czechoslovakia-server glances pairdrop joplin-server forgejo forgejo-runner
+sudo systemctl status dashy homeassistant mosquitto zigbee2mqtt clouds-over-czechoslovakia-server glances pairdrop joplin-server forgejo 'forgejo-runner-*' pages
 sudo systemctl list-timers clouds-over-czechoslovakia.timer
 
 # Logs
@@ -146,9 +146,10 @@ mounted into the container at three points:
 | `forgejo/git`   | `/data/git`       | bare repos + LFS objects |
 | `forgejo/var`   | `/var/lib/gitea`  | runtime work dir (`GITEA_WORK_DIR`) |
 
-The runner's persistent state (`config.yml` + workdir/cache) lives at
-`/var/lib/homelab/forgejo-runner/`. Backing up `/var/lib/homelab/`
-captures the full server + runner state.
+Each runner's persistent state (`config.yml` + workdir/cache) lives at
+`/var/lib/homelab/<runner-name>/` — one directory per entry in
+`forgejo_runners`. Backing up `/var/lib/homelab/` captures the full
+server + every runner's state.
 
 ### Runner ↔ host Podman: how it's wired
 
@@ -180,9 +181,9 @@ report `…:container_runtime_t:s0:c…` to confirm the type is applied.
 ### Daily ops
 
 ```sh
-# Runner status
-sudo systemctl status forgejo-runner
-sudo journalctl -u forgejo-runner -f
+# Runner status (one service per entry in forgejo_runners)
+sudo systemctl status 'forgejo-runner-*'
+sudo journalctl -u forgejo-runner-1 -f  # or -u forgejo-runner-2, etc.
 
 # What the runner sees on the host while a job runs
 sudo podman ps --filter name=ACT_       # job containers (sibling to runner)
@@ -361,10 +362,13 @@ both plays. To add another runner:
 
    ```yaml
    forgejo_runners:
-     - name: forgejo-runner
+     - name: forgejo-runner-1
        uuid: "…"
        token: "…"
-     - name: forgejo-runner-3
+     - name: forgejo-runner-2
+       uuid: "…"
+       token: "…"
+     - name: forgejo-runner-3   # new entry
        uuid: "…"
        token: "…"
    ```
