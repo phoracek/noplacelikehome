@@ -16,7 +16,6 @@
       - pairdrop
       - joplin-server
       - forgejo
-      - forgejo-runner
       - pages
     long_running_units:
       - mosquitto
@@ -50,6 +49,23 @@
       loop: "{{ quadlet_units }}"
       register: quadlet_files
 
+    - name: Install per-runner Quadlet units
+      # Runner Quadlets are generated, not copied, because the unit has
+      # to embed each runner's chosen name (ContainerName, data Volume
+      # path). Everything else about a runner — image, SELinux type,
+      # socket mount, labels — is identical across runners.
+      ansible.builtin.template:
+        src: templates/forgejo-runner/runner.container.j2
+        dest: "{{ quadlet_dir }}/{{ runner.name }}.container"
+        owner: root
+        group: root
+        mode: "0644"
+      loop: "{{ forgejo_runners | default([]) }}"
+      loop_control:
+        loop_var: runner
+        label: "{{ runner.name }}"
+      register: runner_quadlet_files
+
     - name: Install systemd timer units
       ansible.builtin.copy:
         src: "files/systemd/{{ item }}.timer"
@@ -63,7 +79,7 @@
     - name: Reload systemd to pick up Quadlet/timer changes
       ansible.builtin.systemd_service:
         daemon_reload: true
-      when: quadlet_files.changed or timer_files.changed
+      when: quadlet_files.changed or timer_files.changed or runner_quadlet_files.changed
 
     - name: Start long-running container services
       ansible.builtin.systemd_service:
@@ -81,6 +97,18 @@
       loop_control:
         label: "{{ item.item }}"
 
+    - name: Restart runners whose Quadlet changed (only if their credentials are real)
+      ansible.builtin.systemd_service:
+        name: "{{ item.runner.name }}.service"
+        state: restarted
+      loop: "{{ runner_quadlet_files.results | default([]) }}"
+      when:
+        - item.changed
+        - item.runner.uuid != "PASTE_UUID_HERE"
+        - item.runner.token != "PASTE_TOKEN_HERE"
+      loop_control:
+        label: "{{ item.runner.name }}"
+
     - name: Enable and start systemd timers
       ansible.builtin.systemd_service:
         name: "{{ item }}.timer"
@@ -88,12 +116,13 @@
         enabled: true
       loop: "{{ systemd_timers }}"
 
-    - name: Start forgejo-runner once its credentials are configured
+    - name: Start each runner once its credentials are configured
       ansible.builtin.systemd_service:
-        name: forgejo-runner.service
+        name: "{{ item.name }}.service"
         state: started
+      loop: "{{ forgejo_runners | default([]) }}"
       when:
-        - forgejo_runner_uuid is defined
-        - forgejo_runner_token is defined
-        - forgejo_runner_uuid != "PASTE_UUID_HERE"
-        - forgejo_runner_token != "PASTE_TOKEN_HERE"
+        - item.uuid != "PASTE_UUID_HERE"
+        - item.token != "PASTE_TOKEN_HERE"
+      loop_control:
+        label: "{{ item.name }}"

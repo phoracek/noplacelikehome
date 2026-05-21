@@ -137,8 +137,18 @@
         - /var/lib/homelab/forgejo/gitea
         - /var/lib/homelab/forgejo/git
         - /var/lib/homelab/forgejo/var
-        - /var/lib/homelab/forgejo-runner
         - /var/lib/homelab/pages
+
+    - name: Create per-runner data directories
+      ansible.builtin.file:
+        path: "/var/lib/homelab/{{ item.name }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop: "{{ forgejo_runners | default([]) }}"
+      loop_control:
+        label: "{{ item.name }}"
 
     - name: Install Dashy configuration
       ansible.builtin.copy:
@@ -198,35 +208,40 @@
         - /var/lib/homelab/forgejo/var
       notify: Restart forgejo
 
-    - name: Own forgejo-runner data dir to the in-container runner user (UID 1000)
+    - name: Own per-runner data dirs to the in-container runner user (UID 1000)
       # The runner needs to write under /data (its action cache, workflow
       # workdirs, etc.). The mount source on the host is owned root:root
-      # 0755 by the create-dirs loop, so the in-container UID 1000 user
-      # can't mkdir there. Non-recursive on purpose — once the cache is
-      # populated by the runner itself (as UID 1000), Ansible doesn't
+      # 0755 by the create-dirs loop above, so the in-container UID 1000
+      # user can't mkdir there. Non-recursive on purpose — once the cache
+      # is populated by the runner itself (as UID 1000), Ansible doesn't
       # need to re-touch it on every play.
       ansible.builtin.file:
-        path: /var/lib/homelab/forgejo-runner
+        path: "/var/lib/homelab/{{ item.name }}"
         state: directory
         owner: "1000"
         group: "1000"
         mode: "0755"
-      notify: Restart forgejo-runner
+      loop: "{{ forgejo_runners | default([]) }}"
+      loop_control:
+        label: "{{ item.name }}"
+      notify: Restart forgejo runners
 
-    - name: Install forgejo-runner config (skipped until secrets are set in group_vars/server.yml)
+    - name: Install per-runner config.yml (entries with placeholder credentials are skipped)
       ansible.builtin.template:
         src: templates/forgejo-runner/config.yml.j2
-        dest: /var/lib/homelab/forgejo-runner/config.yml
+        dest: "/var/lib/homelab/{{ runner.name }}/config.yml"
         owner: "1000"
         group: "1000"
         mode: "0600"
+      loop: "{{ forgejo_runners | default([]) }}"
+      loop_control:
+        loop_var: runner
+        label: "{{ runner.name }}"
       when:
-        - forgejo_runner_uuid is defined
-        - forgejo_runner_token is defined
-        - forgejo_runner_uuid != "PASTE_UUID_HERE"
-        - forgejo_runner_token != "PASTE_TOKEN_HERE"
+        - runner.uuid != "PASTE_UUID_HERE"
+        - runner.token != "PASTE_TOKEN_HERE"
       no_log: true
-      notify: Restart forgejo-runner
+      notify: Restart forgejo runners
 
     - name: Seed Zigbee2MQTT configuration (skips the v2 onboarding wizard)
       ansible.builtin.copy:
@@ -316,8 +331,16 @@
         state: restarted
       failed_when: false
 
-    - name: Restart forgejo-runner
+    - name: Restart forgejo runners
+      # One handler that loops over every configured runner. Handlers
+      # fire at most once per play regardless of how many notify lines
+      # triggered them, so we can't dispatch per-runner here — restart
+      # all of them. They're idempotent and re-register on start, so
+      # the wasted churn is harmless.
       ansible.builtin.systemd_service:
-        name: forgejo-runner.service
+        name: "{{ item.name }}.service"
         state: restarted
+      loop: "{{ forgejo_runners | default([]) }}"
+      loop_control:
+        label: "{{ item.name }}"
       failed_when: false

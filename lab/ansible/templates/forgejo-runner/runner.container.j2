@@ -1,5 +1,5 @@
 [Unit]
-Description=Forgejo Actions runner
+Description=Forgejo Actions runner ({{ runner.name }})
 After=network-online.target forgejo.service podman.socket
 Wants=network-online.target
 Requires=podman.socket
@@ -10,8 +10,8 @@ Requires=podman.socket
 # from the YAML config file pointed at by --config; older majors require
 # a separate .runner JSON file.
 Image=code.forgejo.org/forgejo/runner:12
-ContainerName=forgejo-runner
-Volume=/var/lib/homelab/forgejo-runner:/data:Z
+ContainerName={{ runner.name }}
+Volume=/var/lib/homelab/{{ runner.name }}:/data:Z
 Volume=/run/podman/podman.sock:/var/run/docker.sock
 Environment=DOCKER_HOST=unix:///var/run/docker.sock
 Environment=TZ=Europe/Prague

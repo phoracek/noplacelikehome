@@ -5,8 +5,8 @@ server:
   connections:
     forgejo:
       url: http://home.local:8128/
-      uuid: {{ forgejo_runner_uuid }}
-      token: {{ forgejo_runner_token }}
+      uuid: {{ runner.uuid }}
+      token: {{ runner.token }}
 
 runner:
   labels:

@@ -91,11 +91,10 @@ and that lookup would otherwise hit the LAN DNS server and fail.
 
       `ansible/group_vars/server.yml` is gitignored — the token never
       enters the repo.
-   c. Re-run the playbooks. `install_podman.yml` templates
-      `/var/lib/homelab/forgejo-runner/config.yml` from
-      `ansible/templates/forgejo-runner/config.yml.j2`;
-      `deploy_containers.yml` starts the runner once the config is in
-      place:
+   c. Re-run the playbooks. `install_podman.yml` templates one
+      `/var/lib/homelab/<name>/config.yml` per entry in
+      `forgejo_runners`; `deploy_containers.yml` renders one Quadlet
+      per entry and starts each runner once its credentials are real:
 
       ```sh
       ansible-playbook -i inventory.file -u ansible install_podman.yml
@@ -106,10 +105,8 @@ and that lookup would otherwise hit the LAN DNS server and fail.
       `systemctl enable` doesn't work on Quadlet-generated transient
       units.
 
-   Adding more runners later: generate a new credential pair in Forgejo,
-   add a second `(uuid, token)` block to `group_vars/server.yml`, clone
-   the Quadlet unit with a new `ContainerName` and `Volume` path, add it
-   to `quadlet_units`, and re-run the playbooks.
+   Adding more runners later: see [Adding another
+   runner](#adding-another-runner) below.
 
 ## Operating the stack
 
@@ -172,11 +169,12 @@ any security layer:
    is the domain Podman itself runs in and is permitted to access the
    socket. SELinux stays enforcing for every other container on the
    host.
-3. **No-op for everyone else** — only `forgejo-runner.container` has
+3. **No-op for everyone else** — only the runner Quadlets (rendered
+   from `ansible/templates/forgejo-runner/runner.container.j2`) carry
    `GroupAdd=` and `SecurityLabelType=`. Every other Quadlet keeps the
    default `container_t` and has no socket access.
 
-`sudo podman inspect forgejo-runner --format '{{.ProcessLabel}}'` should
+`sudo podman inspect <runner-name> --format '{{.ProcessLabel}}'` should
 report `…:container_runtime_t:s0:c…` to confirm the type is applied.
 
 ### Daily ops
@@ -353,23 +351,41 @@ sudo systemctl restart forgejo
 
 ### Adding another runner
 
-1. Generate a new UUID/token pair in Forgejo admin UI.
-2. Clone `quadlet/forgejo-runner.container` to
-   `quadlet/forgejo-runner-2.container`; change `ContainerName=` and
-   the data `Volume=` (the `/data` one) to a fresh host path like
-   `/var/lib/homelab/forgejo-runner-2`.
-3. Add `forgejo-runner-2` to `quadlet_units` in
-   `deploy_containers.yml`.
-4. Extend `ansible/group_vars/server.yml` with the new credential pair
-   under different variable names (e.g. `forgejo_runner_2_uuid`,
-   `forgejo_runner_2_token`).
-5. Duplicate the template + start task in `install_podman.yml` and
-   `deploy_containers.yml` with the new variables and paths.
-6. Re-run both plays.
+Runner config is driven by a `forgejo_runners` list of dicts in
+`ansible/group_vars/server.yml` — one entry per runner, looped over by
+both plays. To add another runner:
 
-For >2 runners, refactor the playbooks to loop over a list of runner
-dicts in `group_vars`; the current setup is intentionally simple for
-one runner.
+1. In Forgejo: Site Administration → Actions → Runners → "Create new
+   runner". Copy the UUID and token (the token is shown only once).
+2. Append an entry to `forgejo_runners` in `group_vars/server.yml`:
+
+   ```yaml
+   forgejo_runners:
+     - name: forgejo-runner
+       uuid: "…"
+       token: "…"
+     - name: forgejo-runner-3
+       uuid: "…"
+       token: "…"
+   ```
+
+   The `name` becomes the systemd unit (`<name>.service`), the
+   container name, and the on-disk data dir
+   (`/var/lib/homelab/<name>/`). Pick something stable — renaming
+   orphans the existing state directory and forces re-registration.
+3. Re-run the playbooks:
+
+   ```sh
+   ansible-playbook -i inventory.file -u ansible install_podman.yml
+   ansible-playbook -i inventory.file -u ansible deploy_containers.yml
+   ```
+
+`install_podman.yml` creates and chowns the new data dir and templates
+its `config.yml`; `deploy_containers.yml` renders the Quadlet from
+`ansible/templates/forgejo-runner/runner.container.j2` and starts the
+service. Entries still carrying the example file's `PASTE_*_HERE`
+placeholders are skipped, so you can stage a slot before cutting the
+token in Forgejo.
 
 ## Home assistant
 
