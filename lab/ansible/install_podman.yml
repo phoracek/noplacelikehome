@@ -3,12 +3,23 @@
   hosts: server
   become: yes
   tasks:
-    - name: Install podman and avahi
+    - name: Enable EPEL (nss-mdns lives there on AlmaLinux 9)
+      ansible.builtin.dnf:
+        name: epel-release
+        state: present
+
+    - name: Install podman, avahi, and nss-mdns
+      # nss-mdns is what lets the host's own libc resolve home.local
+      # back to itself. avahi alone only *advertises* the name to the
+      # LAN — without nss-mdns the host can't resolve its own .local
+      # name, so Forgejo Actions image pulls (which go through the
+      # host's Podman daemon) fail with "no such host".
       ansible.builtin.dnf:
         name:
           - podman
           - firewalld
           - avahi
+          - nss-mdns
           - chrony
         state: present
 
@@ -23,6 +34,15 @@
         name: avahi-daemon.service
         state: started
         enabled: true
+
+    - name: Wire mdns4_minimal into /etc/nsswitch.conf hosts line
+      # The nss-mdns RPM doesn't touch nsswitch on its own; without
+      # this line the .so is installed but never consulted. The
+      # negative lookahead keeps it idempotent.
+      ansible.builtin.replace:
+        path: /etc/nsswitch.conf
+        regexp: '^(hosts:\s+files)(?!.*mdns4_minimal)(.*)$'
+        replace: '\1 mdns4_minimal [NOTFOUND=return]\2'
 
     - name: Enable podman auto-update timer
       ansible.builtin.systemd_service:

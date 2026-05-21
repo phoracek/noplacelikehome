@@ -48,7 +48,11 @@ After `deploy_containers.yml`, the following systemd services are running on the
 The host advertises itself as `home.local` over mDNS via `avahi-daemon`,
 so any LAN client with an mDNS resolver (Linux with `nss-mdns`, macOS,
 Windows, Android, iOS) can reach the services by name. Falls back to
-the host's IP if mDNS is unavailable.
+the host's IP if mDNS is unavailable. The host itself also runs
+`nss-mdns` (pulled in from EPEL by `install_podman.yml`) so its own
+libc resolves `home.local` back to itself — the Forgejo Actions runner
+asks the host's Podman daemon to pull job-container images by name,
+and that lookup would otherwise hit the LAN DNS server and fail.
 
 ## First-time configuration
 
