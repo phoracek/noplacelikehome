@@ -220,6 +220,60 @@ jobs:
 is resolved via `FORGEJO__actions__DEFAULT_ACTIONS_URL=https://code.forgejo.org`,
 which mirrors the common actions.
 
+### Container registry
+
+Forgejo's built-in OCI registry is served on the same listener as the
+web UI: `home.local:8128`. No Quadlet env to flip — packages are enabled
+by default and land on the existing `forgejo/gitea` volume under
+`/data/gitea/packages`. Per-repo images appear in the repo's **Packages**
+tab.
+
+Because the listener is plain HTTP, the host's Podman has to be told to
+trust `home.local:8128` as insecure — `install_podman.yml` drops
+`/etc/containers/registries.conf.d/home-local.conf` for exactly that.
+Without it, the runner can't push (it builds via the mounted host
+socket, so it's the host's Podman doing the talking), and `podman pull`
+on the host or any other LAN machine also refuses.
+
+Push from a workflow:
+
+```yaml
+name: image
+
+on:
+  push:
+
+jobs:
+  build:
+    runs-on: docker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: home.local:8128
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          push: true
+          tags: home.local:8128/${{ github.repository }}:${{ github.sha }}
+```
+
+`${{ secrets.GITHUB_TOKEN }}` is a Forgejo-issued, per-job token with
+write access to the current repo's packages — the variable name is kept
+verbatim for GitHub Actions compatibility (Forgejo Actions also exposes
+the same value as `${{ secrets.FORGEJO_TOKEN }}` if the GitHub naming
+grates).
+
+Pull from any host on the LAN:
+
+```sh
+podman pull home.local:8128/<owner>/<repo>:<tag>
+```
+
+The pulling host needs the same `insecure = true` entry in its own
+`/etc/containers/registries.conf.d/` (the Dell already has it).
+
 ### Opening a PR via the API
 
 Generate a token in User Settings → Applications (scope: at least

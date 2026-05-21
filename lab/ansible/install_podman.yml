@@ -79,6 +79,22 @@
         state: started
         enabled: true
 
+    - name: Trust the Forgejo container registry as insecure (plain HTTP)
+      # Forgejo's container registry is served over the same plain-HTTP
+      # listener as the web UI (http://home.local:8128). Without this
+      # drop-in, the host's Podman refuses to push/pull from it, which
+      # in turn breaks any Forgejo Actions workflow that builds an image
+      # and pushes via the mounted host socket.
+      ansible.builtin.copy:
+        dest: /etc/containers/registries.conf.d/home-local.conf
+        content: |
+          [[registry]]
+          location = "home.local:8128"
+          insecure = true
+        owner: root
+        group: root
+        mode: "0644"
+
     - name: Create homelab data directories
       ansible.builtin.file:
         path: "{{ item }}"
