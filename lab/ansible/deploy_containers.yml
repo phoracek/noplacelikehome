@@ -17,6 +17,7 @@
       - joplin-server
       - forgejo
       - forgejo-runner
+      - pages
     long_running_units:
       - mosquitto
       - zigbee2mqtt
@@ -27,6 +28,7 @@
       - pairdrop
       - joplin-server
       - forgejo
+      - pages
     systemd_timers:
       - clouds-over-czechoslovakia
   tasks:

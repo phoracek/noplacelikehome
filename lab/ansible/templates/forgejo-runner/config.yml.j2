@@ -18,5 +18,11 @@ runner:
 # Quadlet, but that doesn't propagate — job containers need their own
 # /etc/hosts entry, otherwise actions/checkout@v4 can't resolve the
 # Forgejo server URL configured above.
+#
+# The /pages bind mount makes the host's static-site directory writable
+# from inside every job, so a publish step is just `cp -r dist/.
+# /pages/<owner>/<repo>/`. The :z is critical: nginx in the pages
+# Quadlet mounts the same dir, and shared SELinux labelling is what
+# lets both containers touch it.
 container:
-  options: "--add-host=home.local:host-gateway"
+  options: "--add-host=home.local:host-gateway --volume=/var/lib/homelab/pages:/pages:z"

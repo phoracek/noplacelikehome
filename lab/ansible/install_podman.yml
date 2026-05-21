@@ -118,6 +118,7 @@
         - /var/lib/homelab/forgejo/git
         - /var/lib/homelab/forgejo/var
         - /var/lib/homelab/forgejo-runner
+        - /var/lib/homelab/pages
 
     - name: Install Dashy configuration
       ansible.builtin.copy:
@@ -255,6 +256,7 @@
         - 22300/tcp
         - 61208/tcp
         - 8128/tcp
+        - 8129/tcp
 
     - name: Allow mDNS through firewalld so home.local resolves on the LAN
       ansible.posix.firewalld:

@@ -42,6 +42,7 @@ After `deploy_containers.yml`, the following systemd services are running on the
 | `joplin-server.service` | <http://home.local:22300> | Joplin Server (notes sync) |
 | `forgejo.service`       | <http://home.local:8128> | Forgejo Git service |
 | `forgejo-runner.service` | (worker, no UI) | Forgejo Actions runner |
+| `pages.service`         | <http://home.local:8129> | Static-site hosting (published by Forgejo Actions) |
 | `mosquitto.service`     | `127.0.0.1:1883` (host-local) | MQTT broker |
 
 The host advertises itself as `home.local` over mDNS via `avahi-daemon`,
@@ -273,6 +274,49 @@ podman pull home.local:8128/<owner>/<repo>:<tag>
 
 The pulling host needs the same `insecure = true` entry in its own
 `/etc/containers/registries.conf.d/` (the Dell already has it).
+
+### Pages
+
+There's no first-class Forgejo Pages, so the host runs a thin nginx
+Quadlet (`pages.service`) that serves `/var/lib/homelab/pages/`
+read-only at <http://home.local:8129>. Anything an Actions workflow
+writes under `/var/lib/homelab/pages/<owner>/<repo>/` then resolves at
+`http://home.local:8129/<owner>/<repo>/`. No auth, no TLS — homelab
+artifact bucket, not a public Pages clone.
+
+The runner Quadlet bind-mounts that directory into every job container
+at `/pages` (via `--volume=…:/pages:z` in
+`ansible/templates/forgejo-runner/config.yml.j2`), so the publish step
+needs no `podman run`, no docker socket — just `cp`. Minimal Hugo
+example:
+
+```yaml
+name: pages
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: docker
+    container: docker.io/library/hugo-extended:latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - run: hugo --baseURL "http://home.local:8129/${{ github.repository }}/"
+      - run: |
+          mkdir -p "/pages/${{ github.repository }}"
+          rm -rf "/pages/${{ github.repository }}"/*
+          cp -r public/. "/pages/${{ github.repository }}/"
+```
+
+Trade-off vs github.com / codeberg.page Pages: it's path-prefixed
+(`/<owner>/<repo>/…`), not subdomain-rooted, so any static-site
+generator needs to know the prefix — Hugo `--baseURL`, Jekyll
+`baseurl`, Vite `base`, Next.js `basePath`, etc. Absolute paths in the
+generated HTML (`<link href="/style.css">`) break without it.
 
 ### Opening a PR via the API
 
