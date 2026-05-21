@@ -12,3 +12,11 @@ runner:
   labels:
     - docker:docker://node:20-bookworm
     - ubuntu-latest:docker://node:20-bookworm
+
+# Passed to `docker run` when the runner spawns a job container as a
+# sibling. The runner itself has AddHost=home.local:host-gateway in its
+# Quadlet, but that doesn't propagate — job containers need their own
+# /etc/hosts entry, otherwise actions/checkout@v4 can't resolve the
+# Forgejo server URL configured above.
+container:
+  options: "--add-host=home.local:host-gateway"

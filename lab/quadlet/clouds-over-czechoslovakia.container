@@ -5,6 +5,7 @@ Description=Clouds over Czechoslovakia (regenerate artifacts)
 Image=ghcr.io/phoracek/clouds-over-czechoslovakia:latest
 ContainerName=clouds-over-czechoslovakia
 Volume=/var/lib/homelab/clouds-over-czechoslovakia:/opt/artifacts:z
+AddHost=home.local:host-gateway
 AutoUpdate=registry
 Entrypoint=/opt/clouds/entrypoint.sh
 Exec=/opt/artifacts

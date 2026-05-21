@@ -9,6 +9,7 @@ ContainerName=pairdrop
 PublishPort=8127:3000
 Environment=WS_FALLBACK=true
 Environment=RATE_LIMIT=true
+AddHost=home.local:host-gateway
 AutoUpdate=registry
 
 [Service]

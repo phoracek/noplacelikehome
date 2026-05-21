@@ -24,6 +24,7 @@ Environment=FORGEJO__database__DB_TYPE=sqlite3
 Environment=FORGEJO__actions__ENABLED=true
 Environment=FORGEJO__actions__DEFAULT_ACTIONS_URL=https://code.forgejo.org
 Environment=TZ=Europe/Prague
+AddHost=home.local:host-gateway
 AutoUpdate=registry
 
 [Service]

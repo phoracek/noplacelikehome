@@ -8,6 +8,7 @@ Image=docker.io/library/nginx:alpine
 ContainerName=clouds-over-czechoslovakia-server
 PublishPort=8125:80
 Volume=/var/lib/homelab/clouds-over-czechoslovakia:/usr/share/nginx/html:ro,z
+AddHost=home.local:host-gateway
 AutoUpdate=registry
 
 [Service]
