@@ -24,14 +24,7 @@ its own LAN. The T470s is the only host on that LAN.
 
 ## Configuration
 
-The router is configured manually via its web UI. The T470s is assigned a static DHCP lease so it always gets 192.168.88.254:
-
-```routeros
-/ip dhcp-server lease add \
-  mac-address=54:E1:AD:53:46:83 \
-  address=192.168.88.254 \
-  server=defconf
-```
+The router is configured manually via its web UI.
 
 The T470s is provisioned with Ansible: playbooks bootstrap the OS, install
 Podman, and deploy applications. Applications run as rootful Podman containers
@@ -58,6 +51,17 @@ The router's firewall input chain allows SSH, Winbox, and WebFig from the WAN su
   action=accept \
   comment="Allow management from WAN subnet" \
   place-before=0
+```
+
+## DHCP static leases
+
+The T470s is assigned a static lease so it always gets 192.168.88.254:
+
+```routeros
+/ip dhcp-server lease add \
+  mac-address=54:E1:AD:53:46:83 \
+  address=192.168.88.254 \
+  server=defconf
 ```
 
 ## Routing lab traffic from the home network
