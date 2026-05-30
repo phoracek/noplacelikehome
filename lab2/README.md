@@ -64,6 +64,22 @@ The T470s is assigned a static lease so it always gets 192.168.88.254:
   server=defconf
 ```
 
+## Server access from the home network
+
+With the static route in place, the T470s (192.168.88.254) is reachable directly by IP from the home network. The router's forward chain must allow the traffic through:
+
+```routeros
+/ip firewall filter add \
+  chain=forward \
+  in-interface=ether1 \
+  dst-address=192.168.88.254 \
+  protocol=tcp \
+  dst-port=22 \
+  action=accept \
+  comment="Allow SSH to T470s from WAN" \
+  place-before=0
+```
+
 ## Routing lab traffic from the home network
 
 Devices on the home network (192.168.0.0/24) need a static route to reach the lab LAN (192.168.88.0/24) via the router's WAN address (192.168.0.2).
