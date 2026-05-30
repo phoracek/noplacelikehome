@@ -36,3 +36,19 @@ copies the Quadlet units to the host and enables the corresponding services.
 MikroTik [Back To Home](https://help.mikrotik.com/docs/spaces/ROS/pages/197984280/Back+To+Home)
 can be used to create a WireGuard tunnel to the router and connect to the lab
 from outside the home network.
+
+### Router admin from WAN
+
+The router's firewall input chain allows SSH, Winbox, and WebFig from the WAN subnet so the router can be administered from the home network without being on the lab LAN.
+
+```routeros
+/ip firewall filter add \
+  chain=input \
+  src-address=192.168.0.0/24 \
+  in-interface=ether1 \
+  protocol=tcp \
+  dst-port=22,80,443,8291 \
+  action=accept \
+  comment="Allow management from WAN subnet" \
+  place-before=0
+```
