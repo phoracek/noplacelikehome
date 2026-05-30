@@ -15,7 +15,7 @@ Internet
   eth2 ── LAN: 192.168.88.0/24  (GW 192.168.88.1)
                │
                ▼
-        [ T470s server ]  (DHCP lease from router)
+        [ T470s server ]  192.168.88.254  (static DHCP lease)
 ```
 
 The router is a standalone device connected to the home network as a regular
@@ -24,7 +24,14 @@ its own LAN. The T470s is the only host on that LAN.
 
 ## Configuration
 
-The router is configured manually via its web UI.
+The router is configured manually via its web UI. The T470s is assigned a static DHCP lease so it always gets 192.168.88.254:
+
+```routeros
+/ip dhcp-server lease add \
+  mac-address=54:E1:AD:53:46:83 \
+  address=192.168.88.254 \
+  server=defconf
+```
 
 The T470s is provisioned with Ansible: playbooks bootstrap the OS, install
 Podman, and deploy applications. Applications run as rootful Podman containers
