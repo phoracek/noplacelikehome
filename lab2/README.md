@@ -31,29 +31,7 @@ Podman, and deploy applications. Applications run as rootful Podman containers
 defined as systemd Quadlet units (`.container` files in this repo). Ansible
 copies the Quadlet units to the host and enables the corresponding services.
 
-## Remote access
-
-MikroTik [Back To Home](https://help.mikrotik.com/docs/spaces/ROS/pages/197984280/Back+To+Home)
-can be used to create a WireGuard tunnel to the router and connect to the lab
-from outside the home network.
-
-### Router admin from WAN
-
-The router's firewall input chain allows SSH, Winbox, and WebFig from the WAN subnet so the router can be administered from the home network without being on the lab LAN.
-
-```routeros
-/ip firewall filter add \
-  chain=input \
-  src-address=192.168.0.0/24 \
-  in-interface=ether1 \
-  protocol=tcp \
-  dst-port=22,80,443,8291 \
-  action=accept \
-  comment="Allow management from WAN subnet" \
-  place-before=0
-```
-
-## DHCP static leases
+### DHCP static leases
 
 The T470s is assigned a static lease so it always gets 192.168.88.254:
 
@@ -64,9 +42,24 @@ The T470s is assigned a static lease so it always gets 192.168.88.254:
   server=defconf
 ```
 
-## Server access from the home network
+## Accessing from the home network
 
-With the static route in place, the T470s (192.168.88.254) is reachable directly by IP from the home network. The router's forward chain must allow the traffic through:
+Devices on the home network (192.168.0.0/24) can reach the lab LAN directly
+by adding a static route via the router's WAN address (192.168.0.2).
+
+### Static route (Linux / NetworkManager)
+
+```bash
+nmcli connection modify <connection-name> +ipv4.routes "192.168.88.0/24 192.168.0.2"
+nmcli connection up <connection-name>
+```
+
+### Router firewall
+
+Two forward/input rules are needed — one to reach the T470s, one to administer
+the router itself.
+
+Allow SSH to the T470s (forward chain):
 
 ```routeros
 /ip firewall filter add \
@@ -80,13 +73,22 @@ With the static route in place, the T470s (192.168.88.254) is reachable directly
   place-before=0
 ```
 
-## Routing lab traffic from the home network
+Allow SSH, Winbox, and WebFig to the router (input chain):
 
-Devices on the home network (192.168.0.0/24) need a static route to reach the lab LAN (192.168.88.0/24) via the router's WAN address (192.168.0.2).
-
-### Linux (NetworkManager)
-
-```bash
-nmcli connection modify <connection-name> +ipv4.routes "192.168.88.0/24 192.168.0.2"
-nmcli connection up <connection-name>
+```routeros
+/ip firewall filter add \
+  chain=input \
+  src-address=192.168.0.0/24 \
+  in-interface=ether1 \
+  protocol=tcp \
+  dst-port=22,80,443,8291 \
+  action=accept \
+  comment="Allow management from WAN subnet" \
+  place-before=0
 ```
+
+## Remote access
+
+MikroTik [Back To Home](https://help.mikrotik.com/docs/spaces/ROS/pages/197984280/Back+To+Home)
+can be used to create a WireGuard tunnel to the router and connect to the lab
+from outside the home network.
