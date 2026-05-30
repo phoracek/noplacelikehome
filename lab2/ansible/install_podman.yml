@@ -1,0 +1,132 @@
+---
+- name: Install Podman and prepare host for Quadlet-managed containers
+  hosts: server
+  become: yes
+  tasks:
+    - name: Enable EPEL (nss-mdns lives there on AlmaLinux 10)
+      ansible.builtin.dnf:
+        name: epel-release
+        state: present
+
+    - name: Install podman, avahi, and nss-mdns
+      # nss-mdns is what lets the host's own libc resolve lab2.local
+      # back to itself. avahi alone only *advertises* the name to the
+      # LAN — without nss-mdns the host can't resolve its own .local
+      # name, so Forgejo Actions image pulls (which go through the
+      # host's Podman daemon) fail with "no such host".
+      ansible.builtin.dnf:
+        name:
+          - podman
+          - firewalld
+          - avahi
+          - nss-mdns
+          - chrony
+        state: present
+
+    - name: Enable chronyd (Joplin Server rejects host clock drift > 2s)
+      ansible.builtin.systemd_service:
+        name: chronyd.service
+        state: started
+        enabled: true
+
+    - name: Enable avahi-daemon (advertises lab2.local via mDNS)
+      ansible.builtin.systemd_service:
+        name: avahi-daemon.service
+        state: started
+        enabled: true
+
+    - name: Wire mdns4_minimal into /etc/nsswitch.conf hosts line
+      # The nss-mdns RPM doesn't touch nsswitch on its own; without
+      # this line the .so is installed but never consulted. The
+      # negative lookahead keeps it idempotent.
+      ansible.builtin.replace:
+        path: /etc/nsswitch.conf
+        regexp: '^(hosts:\s+files)(?!.*mdns4_minimal)(.*)$'
+        replace: '\1 mdns4_minimal [NOTFOUND=return]\2'
+
+    - name: Enable podman auto-update timer
+      ansible.builtin.systemd_service:
+        name: podman-auto-update.timer
+        state: started
+        enabled: true
+
+    - name: Create podman-users group (fixed GID for socket access by forgejo-runner)
+      ansible.builtin.group:
+        name: podman-users
+        gid: 980
+        system: true
+        state: present
+
+    - name: Ensure podman.socket drop-in directory exists
+      ansible.builtin.file:
+        path: /etc/systemd/system/podman.socket.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Drop-in to gate podman.socket behind the podman-users group
+      # The runner container runs as a non-root user but needs to reach
+      # the rootful Podman socket. Default ownership is root:root 0660,
+      # so we move the group to podman-users (GID 980) and the runner
+      # Quadlet picks that GID up via GroupAdd=980. The socket stays
+      # unreadable to everyone else on the host.
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/podman.socket.d/override.conf
+        content: |
+          [Socket]
+          SocketMode=0660
+          SocketGroup=podman-users
+        owner: root
+        group: root
+        mode: "0644"
+      register: podman_socket_override
+
+    - name: Reload systemd if podman.socket drop-in changed
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+      when: podman_socket_override.changed
+
+    - name: Restart podman.socket if its drop-in changed
+      ansible.builtin.systemd_service:
+        name: podman.socket
+        state: restarted
+      when: podman_socket_override.changed
+
+    - name: Enable the rootful Podman API socket (used by forgejo-runner)
+      ansible.builtin.systemd_service:
+        name: podman.socket
+        state: started
+        enabled: true
+
+    - name: Trust the Forgejo container registry as insecure (plain HTTP)
+      ansible.builtin.copy:
+        dest: /etc/containers/registries.conf.d/lab2-local.conf
+        content: |
+          [[registry]]
+          location = "lab2.local:8128"
+          insecure = true
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Create homelab data directory
+      ansible.builtin.file:
+        path: /var/lib/homelab
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Ensure firewalld is running
+      ansible.builtin.systemd_service:
+        name: firewalld
+        state: started
+        enabled: true
+
+    - name: Allow mDNS through firewalld so lab2.local resolves on the LAN
+      ansible.posix.firewalld:
+        service: mdns
+        permanent: true
+        immediate: true
+        state: enabled

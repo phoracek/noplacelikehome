@@ -26,10 +26,32 @@ its own LAN. The T470s is the only host on that LAN.
 
 The router is configured manually via its web UI.
 
-The T470s is provisioned with Ansible: playbooks bootstrap the OS, install
-Podman, and deploy applications. Applications run as rootful Podman containers
-defined as systemd Quadlet units (`.container` files in this repo). Ansible
-copies the Quadlet units to the host and enables the corresponding services.
+The T470s runs AlmaLinux 10 and is provisioned with Ansible: playbooks bootstrap
+the OS, install Podman, and deploy applications. Applications run as rootful
+Podman containers defined as systemd Quadlet units (`.container` files in this
+repo). Ansible copies the Quadlet units to the host and enables the
+corresponding services.
+
+## Provisioning
+
+Install AlmaLinux 10 from the minimal ISO. Create an `petr` user and allow it
+to become root. Ensure the static DHCP lease is configured on the router so the
+host gets 192.168.88.254 before proceeding.
+
+```sh
+ssh-copy-id petr@192.168.88.254
+```
+
+Provision the host:
+
+```sh
+sudo dnf install ansible
+cd ansible
+ansible-playbook -i inventory.file -u petr    -K create_ansible_user.yml
+ansible-playbook -i inventory.file -u ansible    update_dnf_packages.yml
+ansible-playbook -i inventory.file -u ansible    install_dnf_automatic.yml
+ansible-playbook -i inventory.file -u ansible    install_podman.yml
+```
 
 ### DHCP static leases
 
