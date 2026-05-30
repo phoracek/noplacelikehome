@@ -11,7 +11,7 @@ Internet
     │
     ▼
 [ Router ]
-  eth1 ── WAN: 192.168.0.0/24  (DHCP from home network)
+  eth1 ── WAN: 192.168.0.0/24  (DHCP from home network, router is .2)
   eth2 ── LAN: 192.168.88.0/24  (GW 192.168.88.1)
                │
                ▼
@@ -51,4 +51,15 @@ The router's firewall input chain allows SSH, Winbox, and WebFig from the WAN su
   action=accept \
   comment="Allow management from WAN subnet" \
   place-before=0
+```
+
+## Routing lab traffic from the home network
+
+Devices on the home network (192.168.0.0/24) need a static route to reach the lab LAN (192.168.88.0/24) via the router's WAN address (192.168.0.2).
+
+### Linux (NetworkManager)
+
+```bash
+nmcli connection modify <connection-name> +ipv4.routes "192.168.88.0/24 192.168.0.2"
+nmcli connection up <connection-name>
 ```
