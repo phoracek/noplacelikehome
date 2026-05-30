@@ -51,7 +51,14 @@ ansible-playbook -i inventory.file -u petr    -K create_ansible_user.yml
 ansible-playbook -i inventory.file -u ansible    update_dnf_packages.yml
 ansible-playbook -i inventory.file -u ansible    install_dnf_automatic.yml
 ansible-playbook -i inventory.file -u ansible    install_podman.yml
+ansible-playbook -i inventory.file -u ansible    deploy_containers.yml
 ```
+
+After `deploy_containers.yml` the following services are running:
+
+| Service | URL | Purpose |
+|---------|-----|---------|
+| `caddy.service` | <http://t470s.lab.pacmag.cz> | Reverse proxy |
 
 ### DHCP static leases
 
@@ -81,7 +88,7 @@ nmcli connection up <connection-name>
 Two forward/input rules are needed — one to reach the T470s, one to administer
 the router itself.
 
-Allow SSH to the T470s (forward chain):
+Allow traffic to the T470s (forward chain):
 
 ```routeros
 /ip firewall filter add \
@@ -89,9 +96,9 @@ Allow SSH to the T470s (forward chain):
   in-interface=ether1 \
   dst-address=192.168.88.254 \
   protocol=tcp \
-  dst-port=22 \
+  dst-port=22,80 \
   action=accept \
-  comment="Allow SSH to T470s from WAN" \
+  comment="Allow SSH and HTTP to T470s from WAN" \
   place-before=0
 ```
 
@@ -108,6 +115,21 @@ Allow SSH, Winbox, and WebFig to the router (input chain):
   comment="Allow management from WAN subnet" \
   place-before=0
 ```
+
+## DNS
+
+Services are published under `*.lab.pacmag.cz` managed on Wedos. Each entry
+is an A record pointing to the server's private IP — names resolve only from
+machines that have the static route to 192.168.88.0/24 (or are connected via
+Back To Home).
+
+DNS entries are A records on Wedos pointing to private IPs — they only resolve
+usefully from machines that have the static route to 192.168.88.0/24 via
+192.168.0.2.
+
+| Hostname | A record |
+|----------|----------|
+| `t470s.lab.pacmag.cz` | `192.168.88.254` |
 
 ## Remote access
 

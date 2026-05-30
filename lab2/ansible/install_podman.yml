@@ -110,19 +110,31 @@
         group: root
         mode: "0644"
 
-    - name: Create homelab data directory
+    - name: Create homelab data directories
       ansible.builtin.file:
-        path: /var/lib/homelab
+        path: "{{ item }}"
         state: directory
         owner: root
         group: root
         mode: "0755"
+      loop:
+        - /var/lib/homelab
+        - /var/lib/homelab/caddy
+        - /var/lib/homelab/caddy/data
+        - /var/lib/homelab/caddy/config
 
     - name: Ensure firewalld is running
       ansible.builtin.systemd_service:
         name: firewalld
         state: started
         enabled: true
+
+    - name: Open port 80 for Caddy
+      ansible.posix.firewalld:
+        port: 80/tcp
+        permanent: true
+        immediate: true
+        state: enabled
 
     - name: Allow mDNS through firewalld so lab2.local resolves on the LAN
       ansible.posix.firewalld:

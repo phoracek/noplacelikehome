@@ -1,0 +1,38 @@
+---
+- name: Deploy Quadlet-managed containers
+  hosts: server
+  become: yes
+  tasks:
+    - name: Install Caddy Quadlet unit
+      ansible.builtin.copy:
+        src: ../quadlet/caddy.container
+        dest: /etc/containers/systemd/caddy.container
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reload systemd and restart caddy
+
+    - name: Install Caddy configuration
+      ansible.builtin.copy:
+        src: files/caddy/Caddyfile
+        dest: /var/lib/homelab/caddy/Caddyfile
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reload systemd and restart caddy
+
+    - name: Start caddy
+      ansible.builtin.systemd_service:
+        name: caddy.service
+        state: started
+        enabled: false
+
+  handlers:
+    - name: Reload systemd and restart caddy
+      block:
+        - ansible.builtin.systemd_service:
+            daemon_reload: true
+        - ansible.builtin.systemd_service:
+            name: caddy.service
+            state: restarted
+          failed_when: false

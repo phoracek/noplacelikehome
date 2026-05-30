@@ -1,0 +1,15 @@
+[Unit]
+Description=Caddy reverse proxy
+
+[Container]
+Image=docker.io/library/caddy:latest
+PublishPort=80:80
+Volume=/var/lib/homelab/caddy/Caddyfile:/etc/caddy/Caddyfile:Z
+Volume=/var/lib/homelab/caddy/data:/data:Z
+Volume=/var/lib/homelab/caddy/config:/config:Z
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=multi-user.target default.target
