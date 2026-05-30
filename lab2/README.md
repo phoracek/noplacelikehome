@@ -30,3 +30,9 @@ The T470s is provisioned with Ansible: playbooks bootstrap the OS, install
 Podman, and deploy applications. Applications run as rootful Podman containers
 defined as systemd Quadlet units (`.container` files in this repo). Ansible
 copies the Quadlet units to the host and enables the corresponding services.
+
+## Remote access
+
+MikroTik [Back To Home](https://help.mikrotik.com/docs/spaces/ROS/pages/197984280/Back+To+Home)
+can be used to create a WireGuard tunnel to the router and connect to the lab
+from outside the home network.
