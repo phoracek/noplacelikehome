@@ -1,0 +1,20 @@
+# Custom Caddy build that includes the WEDOS DNS provider for ACME DNS-01.
+# The provider is vendored in-tree under caddy-wedos/ (see caddy-wedos/NOTICE);
+# xcaddy builds against that local module rather than fetching the third-party
+# caddy-dns/wedos plugin from the internet. Caddy core and libdns/libdns are
+# still pulled from their official upstreams during the build.
+# Fully-qualified image names: the host enforces short-name resolution and
+# cannot prompt for a registry without a TTY during `podman build`.
+FROM docker.io/library/caddy:builder AS builder
+COPY caddy-wedos/ /src/caddy-wedos/
+RUN xcaddy build \
+    --with lab2.pacmag.cz/caddy-wedos=/src/caddy-wedos
+
+FROM docker.io/library/caddy:latest
+# The vendored WEDOS provider computes its auth token from the current
+# Europe/Prague hour via time.LoadLocation, which needs the zoneinfo database.
+# The Alpine-based caddy image doesn't ship it, and our xcaddy build doesn't
+# embed it (no timetzdata tag), so install tzdata — otherwise LoadLocation
+# falls back to a fixed UTC+1 and computes the wrong hour during summer time.
+RUN apk add --no-cache tzdata
+COPY --from=builder /usr/bin/caddy /usr/bin/caddy

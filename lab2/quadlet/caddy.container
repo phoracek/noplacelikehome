@@ -2,8 +2,17 @@
 Description=Caddy reverse proxy
 
 [Container]
-Image=docker.io/library/caddy:latest
+# Custom local image built on the host from ansible/files/caddy/Containerfile;
+# it bundles the vendored WEDOS DNS provider for ACME DNS-01. No AutoUpdate —
+# there is no registry copy of this tag.
+Image=localhost/caddy-wedos:latest
+ContainerName=caddy
+Network=forgejo.network
 PublishPort=80:80
+PublishPort=443:443
+# WEDOS WAPI credentials for the DNS-01 challenge (gitignored, templated by
+# Ansible from group_vars/server.yml).
+EnvironmentFile=/var/lib/homelab/caddy/wedos.env
 Volume=/var/lib/homelab/caddy/Caddyfile:/etc/caddy/Caddyfile:Z
 Volume=/var/lib/homelab/caddy/data:/data:Z
 Volume=/var/lib/homelab/caddy/config:/config:Z

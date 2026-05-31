@@ -1,3 +1,32 @@
-t470s.lab.pacmag.cz {
+# Kept plaintext on port 80 — placeholder health endpoint.
+http://t470s.lab.pacmag.cz {
 	respond "OK" 200
+}
+
+forge.lab.pacmag.cz {
+	tls {
+		# ACME DNS-01 via the vendored WEDOS DNS provider. Required because every
+		# *.lab.pacmag.cz name resolves only to a private IP, so the HTTP-01 and
+		# TLS-ALPN challenges can't reach this host. Credentials come from the
+		# container environment (WEDOS_USERNAME / WEDOS_PASSWORD).
+		dns wedos {
+			username {env.WEDOS_USERNAME}
+			password {env.WEDOS_PASSWORD}
+		}
+		# WEDOS enforces a 300s minimum TTL (and a long SOA negative-cache TTL), so
+		# a freshly added token stays hidden behind cached DNS responses for a
+		# while. Present the token and poll public recursive resolvers — the kind
+		# Let's Encrypt uses — until it is actually visible, then validate. The
+		# generous timeout (matching lego's WEDOS default of 10min) absorbs that
+		# delay. We check via these resolvers rather than the zone's authoritative
+		# nameservers because the container can't reach the WEDOS NS on :53.
+		resolvers 1.1.1.1 8.8.8.8 9.9.9.9
+		propagation_delay 30s
+		# Ceiling, not a fixed wait: in steady state the check passes in seconds.
+		# Set high enough to outlast WEDOS's long SOA negative-cache TTL on the
+		# rare occasion the _acme-challenge name was recently seen as NXDOMAIN
+		# (e.g. right after a cleanup/purge).
+		propagation_timeout 1800s
+	}
+	reverse_proxy forgejo:3000
 }

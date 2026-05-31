@@ -2,37 +2,162 @@
 - name: Deploy Quadlet-managed containers
   hosts: server
   become: yes
+  vars:
+    quadlet_dir: /etc/containers/systemd
+    caddy_build_dir: /var/lib/homelab/caddy/build
+    caddy_image: localhost/caddy-wedos:latest
+    container_units:
+      - caddy
+      - forgejo
   tasks:
-    - name: Install Caddy Quadlet unit
+    # Podman does not create missing bind-mount source directories, so the
+    # per-container data dirs must exist before the units start.
+    - name: Ensure Caddy data directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop:
+        - /var/lib/homelab/caddy/data
+        - /var/lib/homelab/caddy/config
+
+    # Forgejo runs as USER_UID/USER_GID 1000 inside the container, so its
+    # bind-mounted data dirs must be owned by uid/gid 1000 on the host (rootful
+    # podman maps container uid 1000 to host uid 1000). Otherwise the git user
+    # can't create gitea.db etc. and the installer fails with "unable to open
+    # database file".
+    - name: Ensure Forgejo data directories exist (owned by the git uid)
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "1000"
+        group: "1000"
+        mode: "0755"
+      loop:
+        - /var/lib/homelab/forgejo/gitea
+        - /var/lib/homelab/forgejo/git
+        - /var/lib/homelab/forgejo/var
+
+    # --- Custom Caddy image (bundles the vendored WEDOS DNS provider) ---
+    - name: Ensure Caddy build directory exists
+      ansible.builtin.file:
+        path: "{{ caddy_build_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Copy Caddy Containerfile
       ansible.builtin.copy:
-        src: ../quadlet/caddy.container
-        dest: /etc/containers/systemd/caddy.container
+        src: files/caddy/Containerfile
+        dest: "{{ caddy_build_dir }}/Containerfile"
         owner: root
         group: root
         mode: "0644"
-      notify: Reload systemd and restart caddy
+      register: caddy_containerfile
 
-    - name: Install Caddy configuration
+    - name: Copy vendored WEDOS DNS provider module
+      ansible.builtin.copy:
+        src: files/caddy/caddy-wedos/
+        dest: "{{ caddy_build_dir }}/caddy-wedos/"
+        owner: root
+        group: root
+        mode: "0644"
+      register: caddy_wedos_src
+
+    - name: Check whether the custom Caddy image already exists
+      ansible.builtin.command:
+        cmd: "podman image exists {{ caddy_image }}"
+      register: caddy_image_present
+      changed_when: false
+      failed_when: false
+
+    - name: Build the custom Caddy image
+      ansible.builtin.command:
+        cmd: "podman build -t {{ caddy_image }} {{ caddy_build_dir }}"
+      when: >
+        caddy_containerfile.changed
+        or caddy_wedos_src.changed
+        or caddy_image_present.rc != 0
+      register: caddy_build
+      changed_when: caddy_build.rc == 0
+      notify: Restart caddy
+
+    # --- Caddy runtime config + secrets ---
+    - name: Deploy WEDOS WAPI environment file
+      ansible.builtin.template:
+        src: templates/caddy/wedos.env.j2
+        dest: /var/lib/homelab/caddy/wedos.env
+        owner: root
+        group: root
+        mode: "0600"
+      notify: Restart caddy
+
+    - name: Install Caddyfile
       ansible.builtin.copy:
         src: files/caddy/Caddyfile
         dest: /var/lib/homelab/caddy/Caddyfile
         owner: root
         group: root
         mode: "0644"
-      notify: Reload systemd and restart caddy
+      notify: Restart caddy
 
-    - name: Start caddy
+    # --- Quadlet units ---
+    - name: Install network Quadlet unit
+      ansible.builtin.copy:
+        src: ../quadlet/forgejo.network
+        dest: "{{ quadlet_dir }}/forgejo.network"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reload systemd
+
+    - name: Install container Quadlet units
+      ansible.builtin.copy:
+        src: "../quadlet/{{ item }}.container"
+        dest: "{{ quadlet_dir }}/{{ item }}.container"
+        owner: root
+        group: root
+        mode: "0644"
+      loop: "{{ container_units }}"
+      register: quadlet_files
+      notify: Reload systemd
+
+    # Run pending handlers (image build, daemon-reload) before starting units,
+    # so the custom image exists and systemd sees the latest unit files.
+    - name: Apply pending image build and systemd reload
+      ansible.builtin.meta: flush_handlers
+
+    - name: Start network
       ansible.builtin.systemd_service:
-        name: caddy.service
+        name: forgejo-network.service
+        state: started
+
+    - name: Start container services
+      ansible.builtin.systemd_service:
+        name: "{{ item }}.service"
         state: started
         enabled: false
+      loop: "{{ container_units }}"
+
+    - name: Restart services whose Quadlet unit changed
+      ansible.builtin.systemd_service:
+        name: "{{ item.item }}.service"
+        state: restarted
+      loop: "{{ quadlet_files.results }}"
+      when: item.changed
+      loop_control:
+        label: "{{ item.item }}"
 
   handlers:
-    - name: Reload systemd and restart caddy
-      block:
-        - ansible.builtin.systemd_service:
-            daemon_reload: true
-        - ansible.builtin.systemd_service:
-            name: caddy.service
-            state: restarted
-          failed_when: false
+    - name: Reload systemd
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+
+    - name: Restart caddy
+      ansible.builtin.systemd_service:
+        name: caddy.service
+        state: restarted
+      failed_when: false

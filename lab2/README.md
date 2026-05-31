@@ -42,11 +42,14 @@ host gets 192.168.88.254 before proceeding.
 ssh-copy-id petr@192.168.88.254
 ```
 
-Provision the host:
+Provision the host. Before `deploy_containers.yml`, copy
+`group_vars/server.yml.example` to `group_vars/server.yml` (gitignored) and fill
+in the Wedos WAPI credentials Caddy uses for TLS (see [Forgejo and TLS](#forgejo-and-tls)).
 
 ```sh
 sudo dnf install ansible
 cd ansible
+cp group_vars/server.yml.example group_vars/server.yml   # then edit in the WAPI credentials
 ansible-playbook -i inventory.file -u petr    -K create_ansible_user.yml
 ansible-playbook -i inventory.file -u ansible    update_dnf_packages.yml
 ansible-playbook -i inventory.file -u ansible    install_dnf_automatic.yml
@@ -58,7 +61,8 @@ After `deploy_containers.yml` the following services are running:
 
 | Service | URL | Purpose |
 |---------|-----|---------|
-| `caddy.service` | <http://t470s.lab.pacmag.cz> | Reverse proxy |
+| `caddy.service` | <http://t470s.lab.pacmag.cz> | Reverse proxy (TLS termination) |
+| `forgejo.service` | <https://forge.lab.pacmag.cz> | Git forge (internal, via Caddy) |
 
 ### DHCP static leases
 
@@ -96,9 +100,9 @@ Allow traffic to the T470s (forward chain):
   in-interface=ether1 \
   dst-address=192.168.88.254 \
   protocol=tcp \
-  dst-port=22,80 \
+  dst-port=22,80,443,2222 \
   action=accept \
-  comment="Allow SSH and HTTP to T470s from WAN" \
+  comment="Allow SSH, HTTP, HTTPS and Forgejo git-SSH to T470s from WAN" \
   place-before=0
 ```
 
@@ -130,6 +134,48 @@ usefully from machines that have the static route to 192.168.88.0/24 via
 | Hostname | A record |
 |----------|----------|
 | `t470s.lab.pacmag.cz` | `192.168.88.254` |
+| `forge.lab.pacmag.cz` | `192.168.88.254` |
+
+## Forgejo and TLS
+
+[Forgejo](https://forge.lab.pacmag.cz)'s web UI runs internal-only: it shares a
+private Podman network (`forgejo`) with Caddy and publishes no host port for
+HTTP, so the UI and HTTPS git are reachable only through Caddy, which terminates
+TLS and reverse-proxies to it.
+
+Git over SSH cannot go through Caddy (it's raw TCP, not HTTP), so Forgejo's
+built-in SSH server is published directly on **host port 2222** (host port 22 is
+the T470s's own `sshd`). Clone over SSH with:
+
+```sh
+git clone ssh://git@forge.lab.pacmag.cz:2222/<owner>/<repo>.git
+```
+
+Add your SSH public key under *Settings → SSH / GPG Keys* first. SSH access from
+the home network requires the router to forward port 2222 (see the forward rule
+above) — HTTPS git needs no key and works the same way over `https://`.
+
+Because every `*.lab.pacmag.cz` name resolves to a private IP, the public ACME
+HTTP-01 / TLS-ALPN challenges cannot reach the host. Caddy therefore obtains the
+Let's Encrypt certificate via the **DNS-01** challenge against Wedos DNS. The
+Wedos DNS provider is **vendored in-tree** under
+`ansible/files/caddy/caddy-wedos/` (pinned to its upstream commit SHAs in that
+directory's `NOTICE`) rather than pulling the third-party `caddy-dns/wedos`
+plugin at build time; Ansible builds a custom `localhost/caddy-wedos` image on
+the host from `ansible/files/caddy/Containerfile`.
+
+DNS-01 issuance needs only **outbound** access to Let's Encrypt and the Wedos
+WAPI — inbound 443 is only for client access. Prerequisites:
+
+1. Create the A record `forge.lab.pacmag.cz → 192.168.88.254` (table above).
+2. In the Wedos customer admin, enable **WAPI**, set a dedicated WAPI password,
+   and allowlist the lab's outbound public IP (WAPI rejects other source IPs).
+3. Copy `ansible/group_vars/server.yml.example` to `server.yml` (gitignored) and
+   fill in `wedos_username` / `wedos_password` (the plain WAPI password).
+4. Ensure the router forwards the client-facing ports to the T470s — `443` for
+   the web UI / HTTPS git, and `2222` for git over SSH (see the forward rule
+   above). Neither is needed for cert issuance (which is outbound-only); they're
+   for reaching Forgejo from across the router.
 
 ## Remote access
 

@@ -1,0 +1,45 @@
+[Unit]
+Description=Forgejo
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+# Codeberg's registry only publishes versioned tags (no :latest). The
+# major-only tag floats to the newest minor/patch in the 15.x series;
+# bump the major manually when a new Forgejo major releases.
+Image=codeberg.org/forgejo/forgejo:15
+ContainerName=forgejo
+# HTTP is internal-only: it joins the shared network with Caddy and publishes no
+# host port for the web UI, reachable only via Caddy at https://forge.lab.pacmag.cz.
+# Git-over-SSH cannot go through Caddy (it's raw TCP, not HTTP), so the built-in
+# SSH server is published directly on host port 2222.
+Network=forgejo.network
+PublishPort=2222:2222
+Volume=/var/lib/homelab/forgejo/gitea:/data/gitea:Z
+Volume=/var/lib/homelab/forgejo/git:/data/git:Z
+Volume=/var/lib/homelab/forgejo/var:/var/lib/gitea:Z
+Environment=USER_UID=1000
+Environment=USER_GID=1000
+Environment=FORGEJO__server__HTTP_PORT=3000
+Environment=FORGEJO__server__ROOT_URL=https://forge.lab.pacmag.cz/
+Environment=FORGEJO__server__DOMAIN=forge.lab.pacmag.cz
+# Git over SSH via Forgejo's built-in Go SSH server. SSH_LISTEN_PORT is the
+# in-container listen port (2222, mapped to host 2222 above); SSH_PORT is the
+# port advertised in clone URLs. Host port 22 is the T470s's own sshd, so SSH
+# uses 2222.
+Environment=FORGEJO__server__DISABLE_SSH=false
+Environment=FORGEJO__server__START_SSH_SERVER=true
+Environment=FORGEJO__server__SSH_LISTEN_PORT=2222
+Environment=FORGEJO__server__SSH_PORT=2222
+Environment=FORGEJO__server__SSH_DOMAIN=forge.lab.pacmag.cz
+Environment=FORGEJO__database__DB_TYPE=sqlite3
+Environment=FORGEJO__actions__ENABLED=true
+Environment=FORGEJO__actions__DEFAULT_ACTIONS_URL=https://code.forgejo.org
+Environment=TZ=Europe/Prague
+AutoUpdate=registry
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=multi-user.target default.target
