@@ -1,0 +1,23 @@
+[Unit]
+Description=Dashy dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=ghcr.io/lissy93/dashy:latest
+ContainerName=dashy
+# Web UI is internal-only: it joins the shared network with Caddy and publishes
+# no host port, reachable only via Caddy at https://lab.pacmag.cz. Dashy serves
+# on port 8080 inside the container.
+Network=forgejo.network
+# Declarative dashboard config (no secrets), copied to the host by Ansible from
+# ansible/files/dashy/conf.yml.
+Volume=/var/lib/homelab/dashy/conf.yml:/app/user-data/conf.yml:Z
+Environment=TZ=Europe/Prague
+AutoUpdate=registry
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=multi-user.target default.target

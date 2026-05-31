@@ -48,3 +48,8 @@ glances.t470s.lab.pacmag.cz {
 	}
 	reverse_proxy glances:61208
 }
+
+lab.pacmag.cz {
+	import wedos_tls
+	reverse_proxy dashy:8080
+}

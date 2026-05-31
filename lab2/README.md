@@ -66,6 +66,7 @@ After `deploy_containers.yml` the following services are running:
 | `caddy.service` | <http://t470s.lab.pacmag.cz> | Reverse proxy (TLS termination) |
 | `forgejo.service` | <https://forge.lab.pacmag.cz> | Git forge (internal, via Caddy) |
 | `glances.service` | <https://glances.t470s.lab.pacmag.cz> | System monitor (internal, via Caddy) |
+| `dashy.service` | <https://lab.pacmag.cz> | Service dashboard (internal, via Caddy) |
 
 ### DHCP static leases
 
@@ -139,6 +140,7 @@ usefully from machines that have the static route to 192.168.88.0/24 via
 | `t470s.lab.pacmag.cz` | `192.168.88.254` |
 | `forge.lab.pacmag.cz` | `192.168.88.254` |
 | `glances.t470s.lab.pacmag.cz` | `192.168.88.254` |
+| `lab.pacmag.cz` | `192.168.88.254` |
 
 ## Forgejo and TLS
 
@@ -204,6 +206,23 @@ basic auth. Set `glances_user` / `glances_password_hash` in
 `group_vars/server.yml` (the hash is a bcrypt string generated with Python's
 `bcrypt`, not the plaintext — see `server.yml.example`); Ansible templates them
 into a 0600 env file that Caddy reads.
+
+## Dashy
+
+[Dashy](https://lab.pacmag.cz) is a static service dashboard linking to the
+other lab services. Like Forgejo and Glances it runs internal-only: it joins the
+shared private Podman network with Caddy and publishes no host port, so its UI is
+reachable only through Caddy, which terminates TLS and reverse-proxies to it on
+port 8080. It reuses the same shared `wedos_tls` snippet in the Caddyfile, so
+issuance works the same way as for the other sites — the only prerequisite is the
+A record `lab.pacmag.cz → 192.168.88.254` (table above). No new router forward is
+needed: client access rides the existing `443` rule.
+
+The dashboard is declarative: its tile layout lives in
+`ansible/files/dashy/conf.yml` and is copied to the host (no secrets, so it is
+checked into the repo rather than templated from `group_vars`). Edit that file
+and re-run `deploy_containers.yml` to change the tiles; Ansible restarts the
+container so Dashy reloads the config.
 
 ## Remote access
 

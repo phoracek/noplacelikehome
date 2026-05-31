@@ -1,0 +1,30 @@
+pageInfo:
+  title: pacmag lab
+  description: Home lab dashboard
+  navLinks: []
+
+appConfig:
+  theme: nord-frost
+  layout: auto
+  iconSize: medium
+  language: en
+  statusCheck: true
+  hideComponents:
+    hideSettings: false
+
+sections:
+  - name: Services
+    icon: fas fa-server
+    items:
+      - title: Forgejo
+        description: Self-hosted Git forge
+        icon: hl-forgejo
+        url: https://forge.lab.pacmag.cz
+        target: newtab
+        statusCheckUrl: https://forge.lab.pacmag.cz/api/v1/version
+
+      - title: Glances
+        description: Host system monitor
+        icon: hl-glances
+        url: https://glances.t470s.lab.pacmag.cz
+        target: newtab

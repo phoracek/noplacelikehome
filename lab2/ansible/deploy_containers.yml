@@ -10,6 +10,7 @@
       - caddy
       - forgejo
       - glances
+      - dashy
   tasks:
     # Podman does not create missing bind-mount source directories, so the
     # per-container data dirs must exist before the units start.
@@ -40,6 +41,25 @@
         - /var/lib/homelab/forgejo/gitea
         - /var/lib/homelab/forgejo/git
         - /var/lib/homelab/forgejo/var
+
+    # Dashy bind-mounts a single config file; its parent dir must exist on the
+    # host before the unit starts (Podman won't create the bind-mount source).
+    - name: Ensure Dashy data directory exists
+      ansible.builtin.file:
+        path: /var/lib/homelab/dashy
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Install Dashy config
+      ansible.builtin.copy:
+        src: files/dashy/conf.yml
+        dest: /var/lib/homelab/dashy/conf.yml
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart dashy
 
     # --- Custom Caddy image (bundles the vendored WEDOS DNS provider) ---
     - name: Ensure Caddy build directory exists
@@ -169,5 +189,11 @@
     - name: Restart caddy
       ansible.builtin.systemd_service:
         name: caddy.service
+        state: restarted
+      failed_when: false
+
+    - name: Restart dashy
+      ansible.builtin.systemd_service:
+        name: dashy.service
         state: restarted
       failed_when: false
