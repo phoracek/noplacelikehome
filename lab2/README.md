@@ -57,6 +57,7 @@ ansible-playbook -i inventory.file -u ansible    update_dnf_packages.yml
 ansible-playbook -i inventory.file -u ansible    install_dnf_automatic.yml
 ansible-playbook -i inventory.file -u ansible    install_podman.yml
 ansible-playbook -i inventory.file -u ansible    deploy_containers.yml
+ansible-playbook -i inventory.file -u ansible    install_backup.yml
 ```
 
 After `deploy_containers.yml` the following services are running:
@@ -223,6 +224,49 @@ The dashboard is declarative: its tile layout lives in
 checked into the repo rather than templated from `group_vars`). Edit that file
 and re-run `deploy_containers.yml` to change the tiles; Ansible restarts the
 container so Dashy reloads the config.
+
+## Backups
+
+All persistent service state lives in host bind mounts under
+`/var/lib/homelab/`. `install_backup.yml` installs a small backup script
+(`/usr/local/sbin/homelab-backup.sh`) driven by a systemd timer
+(`homelab-backup.timer`) that runs **daily at 04:00**. Each run tars + gzips the
+data into a dated archive under `/var/backups/homelab/`
+(`homelab-YYYY-MM-DD.tar.gz`) and prunes archives older than **14 days**.
+
+What's captured: Caddy's issued certs and ACME state (`caddy/data`,
+`caddy/config`), the Caddyfile and the 0600 secret env files (`wedos.env`,
+`glances.env`), Forgejo's `gitea.db` and metadata (`forgejo/gitea`), its git
+repositories (`forgejo/git`) and runtime data (`forgejo/var`), and the Dashy
+config. The transient Caddy build dir (`caddy/build`) is excluded — it's rebuilt
+from the repo on every `deploy_containers.yml` run, and Glances has no
+persistent state. The backup destination is mode `0700` because the archives
+contain those 0600 secrets.
+
+The backup is a **live copy**: it tars the data while the containers run, so
+there's no downtime, but a Forgejo SQLite snapshot taken mid-write could in
+principle be inconsistent. For a low-traffic personal forge backed up at 04:00
+this is an acceptable risk; if it ever matters, switch the script to
+`forgejo dump` or briefly stop the containers around the copy.
+
+Trigger a backup on demand and inspect it with:
+
+```sh
+systemctl start homelab-backup.service
+journalctl -u homelab-backup.service          # shows the "Backup written" line
+systemctl list-timers homelab-backup.timer    # next scheduled run
+```
+
+To **restore**, stop the containers, extract an archive over the root
+filesystem (`tar -p` restores the original ownership and modes, including the
+uid/gid 1000 Forgejo dirs and the 0600 secrets), then start the containers
+again:
+
+```sh
+systemctl stop caddy.service forgejo.service glances.service dashy.service
+tar -xzpf /var/backups/homelab/homelab-YYYY-MM-DD.tar.gz -C /
+systemctl start caddy.service forgejo.service glances.service dashy.service
+```
 
 ## Remote access
 

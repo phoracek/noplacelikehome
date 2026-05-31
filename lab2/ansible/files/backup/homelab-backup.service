@@ -1,0 +1,9 @@
+[Unit]
+Description=Daily backup of homelab container data
+Wants=homelab-backup.timer
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/homelab-backup.sh
+Nice=10
+IOSchedulingClass=idle
