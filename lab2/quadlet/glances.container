@@ -1,0 +1,27 @@
+[Unit]
+Description=Glances system monitor
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=docker.io/nicolargo/glances:latest
+ContainerName=glances
+# Web UI is internal-only: it joins the shared network with Caddy and publishes
+# no host port, reachable only via Caddy at https://glances.t470s.lab.pacmag.cz.
+Network=forgejo.network
+# Run Glances in web-server mode (listens on 61208 inside the container).
+Environment=GLANCES_OPT=-w
+Environment=TZ=Europe/Prague
+# Share the host PID namespace so Glances reports the host's processes, load, and
+# per-process stats rather than just what it sees inside its own container.
+PodmanArgs=--pid=host
+# Read-only host mount so Glances can identify the host OS rather than the
+# container's minimal base image.
+Volume=/etc/os-release:/etc/os-release:ro
+AutoUpdate=registry
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=multi-user.target default.target

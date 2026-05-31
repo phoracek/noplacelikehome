@@ -3,12 +3,12 @@ http://t470s.lab.pacmag.cz {
 	respond "OK" 200
 }
 
-forge.lab.pacmag.cz {
+# Shared TLS config for every internal site below. ACME DNS-01 via the vendored
+# WEDOS DNS provider — required because every *.lab.pacmag.cz name resolves only
+# to a private IP, so the HTTP-01 and TLS-ALPN challenges can't reach this host.
+# Credentials come from the container environment (WEDOS_USERNAME / WEDOS_PASSWORD).
+(wedos_tls) {
 	tls {
-		# ACME DNS-01 via the vendored WEDOS DNS provider. Required because every
-		# *.lab.pacmag.cz name resolves only to a private IP, so the HTTP-01 and
-		# TLS-ALPN challenges can't reach this host. Credentials come from the
-		# container environment (WEDOS_USERNAME / WEDOS_PASSWORD).
 		dns wedos {
 			username {env.WEDOS_USERNAME}
 			password {env.WEDOS_PASSWORD}
@@ -28,5 +28,23 @@ forge.lab.pacmag.cz {
 		# (e.g. right after a cleanup/purge).
 		propagation_timeout 1800s
 	}
+}
+
+forge.lab.pacmag.cz {
+	import wedos_tls
 	reverse_proxy forgejo:3000
+}
+
+glances.t470s.lab.pacmag.cz {
+	import wedos_tls
+	# Glances' web UI has no authentication of its own and, because the container
+	# runs with --pid=host, exposes every host process's full command line (which
+	# routinely leaks secrets passed as CLI args). Gate it at the edge with HTTP
+	# basic auth. The username and bcrypt password hash are substituted at config
+	# load from the container environment (templated by Ansible from the gitignored
+	# group_vars/server.yml); see server.yml.example for how to generate the hash.
+	basic_auth {
+		{$GLANCES_USER} {$GLANCES_PASSWORD_HASH}
+	}
+	reverse_proxy glances:61208
 }

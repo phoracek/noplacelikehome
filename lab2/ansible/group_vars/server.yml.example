@@ -32,3 +32,18 @@
 
 wedos_username: "your-wedos-account-login"
 wedos_password: "your-wapi-password"
+
+# HTTP basic-auth credentials Caddy uses to gate the Glances web UI
+# (glances.t470s.lab.pacmag.cz). Glances itself has no authentication, so this is
+# the only thing standing between a host on the lab network and a read-only view
+# of every host process's command line.
+#
+# glances_password_hash is a *bcrypt hash*, not the plaintext password (the hash,
+# not the password, lives on disk). Generate it with Python (pip install bcrypt);
+# getpass keeps the password out of your shell history:
+#
+#   python3 -c 'import bcrypt, getpass; print(bcrypt.hashpw(getpass.getpass("Password: ").encode(), bcrypt.gensalt(14)).decode())'
+#
+# Copy the resulting $2b$ string verbatim into glances_password_hash.
+glances_user: "admin"
+glances_password_hash: "$2a$14$replace-with-a-real-bcrypt-hash"

@@ -13,6 +13,9 @@ PublishPort=443:443
 # WEDOS WAPI credentials for the DNS-01 challenge (gitignored, templated by
 # Ansible from group_vars/server.yml).
 EnvironmentFile=/var/lib/homelab/caddy/wedos.env
+# HTTP basic-auth credentials gating the Glances site (username + bcrypt hash),
+# same provenance as the WEDOS creds above.
+EnvironmentFile=/var/lib/homelab/caddy/glances.env
 Volume=/var/lib/homelab/caddy/Caddyfile:/etc/caddy/Caddyfile:Z
 Volume=/var/lib/homelab/caddy/data:/data:Z
 Volume=/var/lib/homelab/caddy/config:/config:Z

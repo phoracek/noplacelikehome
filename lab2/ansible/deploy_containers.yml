@@ -9,6 +9,7 @@
     container_units:
       - caddy
       - forgejo
+      - glances
   tasks:
     # Podman does not create missing bind-mount source directories, so the
     # per-container data dirs must exist before the units start.
@@ -90,6 +91,15 @@
       ansible.builtin.template:
         src: templates/caddy/wedos.env.j2
         dest: /var/lib/homelab/caddy/wedos.env
+        owner: root
+        group: root
+        mode: "0600"
+      notify: Restart caddy
+
+    - name: Deploy Glances basic-auth environment file
+      ansible.builtin.template:
+        src: templates/caddy/glances.env.j2
+        dest: /var/lib/homelab/caddy/glances.env
         owner: root
         group: root
         mode: "0600"

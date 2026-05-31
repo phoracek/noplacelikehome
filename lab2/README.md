@@ -44,7 +44,9 @@ ssh-copy-id petr@192.168.88.254
 
 Provision the host. Before `deploy_containers.yml`, copy
 `group_vars/server.yml.example` to `group_vars/server.yml` (gitignored) and fill
-in the Wedos WAPI credentials Caddy uses for TLS (see [Forgejo and TLS](#forgejo-and-tls)).
+in the credentials it documents: the Wedos WAPI credentials Caddy uses for TLS
+(see [Forgejo and TLS](#forgejo-and-tls)) and the Glances basic-auth credentials
+(see [Glances](#glances)).
 
 ```sh
 sudo dnf install ansible
@@ -63,6 +65,7 @@ After `deploy_containers.yml` the following services are running:
 |---------|-----|---------|
 | `caddy.service` | <http://t470s.lab.pacmag.cz> | Reverse proxy (TLS termination) |
 | `forgejo.service` | <https://forge.lab.pacmag.cz> | Git forge (internal, via Caddy) |
+| `glances.service` | <https://glances.t470s.lab.pacmag.cz> | System monitor (internal, via Caddy) |
 
 ### DHCP static leases
 
@@ -135,6 +138,7 @@ usefully from machines that have the static route to 192.168.88.0/24 via
 |----------|----------|
 | `t470s.lab.pacmag.cz` | `192.168.88.254` |
 | `forge.lab.pacmag.cz` | `192.168.88.254` |
+| `glances.t470s.lab.pacmag.cz` | `192.168.88.254` |
 
 ## Forgejo and TLS
 
@@ -176,6 +180,30 @@ WAPI — inbound 443 is only for client access. Prerequisites:
    the web UI / HTTPS git, and `2222` for git over SSH (see the forward rule
    above). Neither is needed for cert issuance (which is outbound-only); they're
    for reaching Forgejo from across the router.
+
+## Glances
+
+[Glances](https://glances.t470s.lab.pacmag.cz) runs in web-server mode as an
+internal-only container: like Forgejo it shares the private Podman network with
+Caddy and publishes no host port, so its UI is reachable only through Caddy,
+which terminates TLS and reverse-proxies to it on port 61208. It reuses the same
+shared `wedos_tls` snippet in the Caddyfile, so issuance works the same way as
+for Forgejo — the only prerequisite is the A record
+`glances.t470s.lab.pacmag.cz → 192.168.88.254` (table above). No new router
+forward is needed: client access rides the existing `443` rule.
+
+The container runs with `--pid=host` so Glances reports the host's processes and
+load rather than just its own container. Glances' web UI exposes only read-only
+stats — its REST API has no process-kill or command-execution endpoint (killing
+processes is a feature of the terminal UI only). The real exposure is
+information disclosure: with `--pid=host` the process list shows every host
+process's full command line, which routinely leaks secrets passed as CLI args.
+
+Glances has **no authentication of its own**, so Caddy gates the site with HTTP
+basic auth. Set `glances_user` / `glances_password_hash` in
+`group_vars/server.yml` (the hash is a bcrypt string generated with Python's
+`bcrypt`, not the plaintext — see `server.yml.example`); Ansible templates them
+into a 0600 env file that Caddy reads.
 
 ## Remote access
 
