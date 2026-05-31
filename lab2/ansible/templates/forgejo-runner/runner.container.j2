@@ -1,0 +1,43 @@
+[Unit]
+Description=Forgejo Actions runner ({{ runner.name }})
+After=network-online.target forgejo.service podman.socket
+Wants=network-online.target
+Requires=podman.socket
+
+[Container]
+# Forgejo Runner is versioned independently from Forgejo itself; bump
+# the major manually when a new release ships. v12+ reads credentials
+# from the YAML config file pointed at by --config; older majors require
+# a separate .runner JSON file.
+Image=code.forgejo.org/forgejo/runner:12
+ContainerName={{ runner.name }}
+Volume=/var/lib/homelab/{{ runner.name }}:/data:Z
+Volume=/run/podman/podman.sock:/var/run/docker.sock
+Environment=DOCKER_HOST=unix:///var/run/docker.sock
+Environment=TZ=Europe/Prague
+# Match the host-side GID of the podman-users group so the runner's
+# in-container user can read the socket without world-wide access.
+GroupAdd=980
+# SELinux: run the container in container_runtime_t instead of the
+# default container_t. The Podman socket is labeled container_var_run_t,
+# which container_t (ordinary sandboxed containers) is explicitly denied
+# access to — but container_runtime_t (the domain Podman itself uses) is
+# allowed. This keeps full MAC enforcement and confinement; it only
+# moves the runner into the right domain for its job (managing other
+# containers via the runtime socket). Other containers on the host
+# continue to run in container_t.
+SecurityLabelType=container_runtime_t
+# Forgejo's web UI publishes no host port — it's reached only through Caddy
+# at https://forge.lab.pacmag.cz. Map that name to the host gateway so the
+# runner resolves it to the host, where Caddy serves 443 and reverse-proxies
+# to the forgejo container.
+AddHost=forge.lab.pacmag.cz:host-gateway
+WorkingDir=/data
+Exec=forgejo-runner daemon --config /data/config.yml
+AutoUpdate=registry
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=multi-user.target default.target

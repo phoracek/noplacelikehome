@@ -66,6 +66,7 @@ After `deploy_containers.yml` the following services are running:
 |---------|-----|---------|
 | `caddy.service` | <http://t470s.lab.pacmag.cz> | Reverse proxy (TLS termination) |
 | `forgejo.service` | <https://forge.lab.pacmag.cz> | Git forge (internal, via Caddy) |
+| `forgejo-runner-1.service`, `forgejo-runner-2.service` | (workers, no UI) | Forgejo Actions runners — one systemd unit per entry in `forgejo_runners` |
 | `glances.service` | <https://glances.t470s.lab.pacmag.cz> | System monitor (internal, via Caddy) |
 | `dashy.service` | <https://lab.pacmag.cz> | Service dashboard (internal, via Caddy) |
 
@@ -183,6 +184,110 @@ WAPI — inbound 443 is only for client access. Prerequisites:
    the web UI / HTTPS git, and `2222` for git over SSH (see the forward rule
    above). Neither is needed for cert issuance (which is outbound-only); they're
    for reaching Forgejo from across the router.
+
+## Forgejo Actions runners
+
+Two [Forgejo Actions](https://forgejo.org/docs/latest/user/actions/) runners
+pick up CI jobs locally and run each job as a Podman container. Actions are
+already enabled on the server (`FORGEJO__actions__ENABLED=true`); the runners
+are defined declaratively as one entry each in `forgejo_runners`
+(`group_vars/server.yml`), rendered into one Quadlet unit + one `config.yml`
+per entry. Add or remove entries to change how many runners run.
+
+### Registering the runners
+
+Forgejo 15 / Runner 12 uses a YAML config file with persistent connection
+credentials. All host-side steps go through Ansible — no manual editing on the
+server.
+
+1. In Forgejo: **Site Administration → Actions → Runners → "Create new
+   runner"**. The page shows a UUID and a registration token (the token is
+   shown once — copy both).
+2. On your workstation, paste the values into the gitignored secrets file
+   (created from `server.yml.example` during provisioning):
+
+   ```sh
+   $EDITOR ansible/group_vars/server.yml   # fill uuid/token under forgejo_runners
+   ```
+
+   Entries left on the `PASTE_*` placeholders are skipped — no `config.yml` is
+   written and the runner is not started, so you can fill them in one at a time.
+3. Re-run `deploy_containers.yml`. It writes one
+   `/var/lib/homelab/<name>/config.yml`, renders one Quadlet per entry, and
+   starts each runner once its credentials are real:
+
+   ```sh
+   ansible-playbook -i inventory.file -u ansible deploy_containers.yml
+   ```
+
+   The Quadlet's `WantedBy=` handles auto-start at boot.
+
+### Runner ↔ host Podman: how it's wired
+
+Each runner reaches Forgejo at `https://forge.lab.pacmag.cz/` — the same URL
+clients use. The web UI publishes no host port, so the runner Quadlet maps
+`forge.lab.pacmag.cz` to `host-gateway` (and passes the same `--add-host` to
+every job container it spawns, via `container.options` in `config.yml`),
+hairpinning back to Caddy's published 443. The cert is a real Let's Encrypt
+cert, so no insecure-TLS flags are needed.
+
+To spawn job containers as siblings, the runner needs the host's rootful Podman
+socket — granted without disabling any security layer:
+
+1. **DAC** — `install_podman.yml` creates a system group `podman-users`
+   (GID 980) and drops in `/etc/systemd/system/podman.socket.d/override.conf`
+   setting `SocketMode=0660` + `SocketGroup=podman-users`. The runner Quadlet
+   has `GroupAdd=980` so the in-container user is a supplementary member.
+2. **MAC** — the runner Quadlet sets
+   `SecurityLabelType=container_runtime_t`. The Podman socket is labeled
+   `container_var_run_t`, which the default `container_t` domain is forbidden
+   from touching; `container_runtime_t` (the domain Podman itself uses) is
+   permitted. SELinux stays enforcing for every other container on the host.
+
+Confirm the type is applied:
+`sudo podman inspect forgejo-runner-1 --format '{{.ProcessLabel}}'` should
+report `…:container_runtime_t:…`.
+
+### Daily ops
+
+```sh
+sudo systemctl status 'forgejo-runner-*'
+sudo journalctl -u forgejo-runner-1 -f   # or -u forgejo-runner-2
+sudo podman ps --filter name=ACT_        # job containers (siblings) while a job runs
+```
+
+The admin Actions page
+(<https://forge.lab.pacmag.cz/-/admin/actions/runners>) shows each runner's
+`Idle`/`Active` status.
+
+### Running CI on a repo
+
+Drop a workflow at `.forgejo/workflows/<name>.yml`. Minimal example running in
+the runner-default `node:20-bookworm` image:
+
+```yaml
+name: check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: docker
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "hello from CI"
+```
+
+`runs-on: docker` (or `ubuntu-latest`) matches the labels the runner registers
+with (set in `ansible/templates/forgejo-runner/config.yml.j2`).
+`actions/checkout@v4` resolves via
+`FORGEJO__actions__DEFAULT_ACTIONS_URL=https://code.forgejo.org`.
+
+Each runner's state (`config.yml` + workdir/cache) lives at
+`/var/lib/homelab/<runner-name>/`, so the daily backup (which tars all of
+`/var/lib/homelab`, see [Backups](#backups)) captures it automatically.
 
 ## Glances
 

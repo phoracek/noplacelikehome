@@ -47,3 +47,23 @@ wedos_password: "your-wapi-password"
 # Copy the resulting $2b$ string verbatim into glances_password_hash.
 glances_user: "admin"
 glances_password_hash: "$2a$14$replace-with-a-real-bcrypt-hash"
+
+# Forgejo Actions runners. Each entry becomes one systemd unit, one container,
+# and one data dir (/var/lib/homelab/<name>/). Add or remove entries to change
+# how many runners run — the playbooks loop over this list.
+#
+# To get the uuid + token for an entry: in Forgejo open
+# Site Administration → Actions → Runners → "Create new runner". The page shows
+# a UUID and a registration token (the token is shown once — copy both). Paste
+# them below, replacing the PASTE_* placeholders.
+#
+# Entries left with the PASTE_* placeholders are skipped: no config.yml is
+# written and the runner is not started, so you can commit-then-fill at your
+# own pace.
+forgejo_runners:
+  - name: forgejo-runner-1
+    uuid: "PASTE_UUID_HERE"
+    token: "PASTE_TOKEN_HERE"
+  - name: forgejo-runner-2
+    uuid: "PASTE_UUID_HERE"
+    token: "PASTE_TOKEN_HERE"

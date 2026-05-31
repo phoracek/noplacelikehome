@@ -129,12 +129,19 @@
         state: started
         enabled: true
 
-    - name: Open port 80 for Caddy
+    - name: Open ports 80 and 443 for Caddy
+      # 443 is the client-facing HTTPS port, and also the path Forgejo Actions
+      # runners (and the job containers they spawn) take to reach the Forgejo
+      # web UI: they resolve forge.lab.pacmag.cz to the host gateway and hairpin
+      # back to Caddy's published 443. Without 443 open, that lookup is refused.
       ansible.posix.firewalld:
-        port: 80/tcp
+        port: "{{ item }}"
         permanent: true
         immediate: true
         state: enabled
+      loop:
+        - 80/tcp
+        - 443/tcp
 
     - name: Allow mDNS through firewalld so lab2.local resolves on the LAN
       ansible.posix.firewalld:
