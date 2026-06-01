@@ -1,0 +1,268 @@
+---
+# Deploy the hardware bench MCP as a native systemd service on the T470s, running
+# under a dedicated unprivileged service user ({{ ramus_mcp_service_user }}) rather
+# than a human account.
+#
+# The play pushes the MCP server code from the control node (the machine you run
+# ansible from) to the host via rsync: the mcp-server/ subtree plus the
+# tools/probe-utils.sh helper the server shells out to on every flash/reset
+# (REPO_TOOLS_DIR = the repo's tools/ dir). The on-host .venv is NOT synced - uv
+# rebuilds it on the host into the service user's home, so the laptop's venv (with
+# its absolute paths) never leaks across.
+#
+# The play also installs the bench's runtime dependencies into /usr/local/bin
+# (on the unit's PATH): uv + probe-rs via their official install scripts, and
+# openocd + dfu-util built from source (probe-utils.sh drives both for flash/reset;
+# neither has an EPEL 10 build). alsa-lib (libasound for python-rtmidi) comes from
+# dnf. Building openocd/dfu-util needs outbound internet and adds a few minutes to
+# the first run; the creates= guards skip the compile on subsequent runs.
+#
+# Prerequisites NOT handled here: the ansible.posix collection on the control
+# node for the rsync module (see requirements.yml - the full `ansible` package
+# bundles it), and outbound internet on the host at deploy time (the install
+# scripts and, on first start, uv's Python/venv download need it).
+#
+# The credentials gating the MCP control channel and the Caddy site block / env
+# file are deployed by deploy_services_containerized_applications.yml; this play only installs the host
+# service that Caddy proxies to.
+- name: Deploy hardware bench MCP service
+  hosts: server
+  become: yes
+  vars:
+    ramus_mcp_home: "/var/lib/{{ ramus_mcp_service_user }}"
+    # openocd + dfu-util have no EPEL 10 build, so build them from the upstream
+    # release tarballs (which ship a pre-generated ./configure and bundle jimtcl,
+    # so no autotools/git-submodule dance). Bump these to pick up new releases.
+    openocd_version: "0.12.0"
+    dfu_util_version: "0.11"
+  tasks:
+    - name: Install build + runtime dependencies from dnf
+      # alsa-lib: libasound that python-rtmidi links against (BaseOS).
+      # rsync: required on the host for the code-sync task below (not in the
+      # minimal install). The rest build openocd + dfu-util from source:
+      # libusb1-devel is what drives the ST-Link probe (interface/stlink.cfg) and
+      # dfu-util's USB I/O; libftdi / hidapi (other adapters) have no el10 build
+      # and aren't needed here, so configure just disables those drivers.
+      ansible.builtin.dnf:
+        name:
+          - alsa-lib
+          - rsync
+          - gcc
+          - make
+          - libusb1-devel
+          - pkgconf-pkg-config
+          - tar
+          - bzip2
+        state: present
+
+    - name: Build and install dfu-util into /usr/local/bin
+      # probe-utils.sh runs `dfu-util` for the DFU firmware upload. creates= makes
+      # the whole compile a no-op once the binary is in place.
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          cd "$tmp"
+          curl -LsSf "https://dfu-util.sourceforge.net/releases/dfu-util-{{ dfu_util_version }}.tar.gz" \
+            | tar -xz --strip-components=1
+          ./configure --prefix=/usr/local
+          make -j"$(nproc)"
+          make install
+          rm -rf "$tmp"
+        creates: /usr/local/bin/dfu-util
+
+    - name: Build and install openocd into /usr/local/bin
+      # probe-utils.sh runs `openocd` for SWD reset / RTT flush via the ST-Link
+      # interface. --enable-stlink is libusb-backed; FTDI/CMSIS-DAP-HID drivers are
+      # left at their defaults (auto-disabled without libftdi/hidapi). --disable-werror
+      # is required because 0.12.0 predates GCC 14's calloc-transposed-args check,
+      # which otherwise fails an unrelated driver (ulink) as a hard error. creates=
+      # short-circuits the compile once installed.
+      #
+      # The sed enables the `binary` command in OpenOCD's bundled Jim Tcl
+      # interpreter. Upstream configures the internal jimtcl with --with-ext=json
+      # only, which omits the (optional, pack-backed) `binary` extension; probe-
+      # utils.sh's flush-rtt scan calls `binary format`, so without it the scan
+      # aborts with `invalid command name "binary"` and every flash 500s on the
+      # post-upload RTT flush. jimtcl splits --with-ext on commas, so json,binary
+      # is a single shell word that survives the sub-configure verbatim. (We patch
+      # the bundled jimtcl rather than link a system one: OpenOCD 0.12.0's source
+      # uses jimtcl internals removed by 0.83, the only packaged build available.)
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          cd "$tmp"
+          curl -LsSf "https://sourceforge.net/projects/openocd/files/openocd/{{ openocd_version }}/openocd-{{ openocd_version }}.tar.bz2/download" \
+            | tar -xj --strip-components=1
+          sed -i 's/--with-ext=json/--with-ext=json,binary/g' configure
+          ./configure --prefix=/usr/local --enable-stlink --disable-werror
+          make -j"$(nproc)"
+          make install
+          rm -rf "$tmp"
+        creates: /usr/local/bin/openocd
+
+    - name: Install uv into /usr/local/bin
+      # Official installer; idempotent enough (re-running just reinstalls the same
+      # release). /usr/local/bin is on the systemd unit's PATH. creates= keeps it
+      # from re-downloading on every run.
+      ansible.builtin.shell:
+        cmd: >
+          curl -LsSf https://astral.sh/uv/install.sh
+          | env UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1 sh
+        creates: /usr/local/bin/uv
+
+    - name: Install probe-rs into /usr/local/bin
+      # probe-rs (RTT attach path, server.py) is not packaged for dnf; use the
+      # official cargo-dist installer. It installs to $CARGO_HOME/bin, so point
+      # CARGO_HOME at a scratch dir and copy the resulting binaries into
+      # /usr/local/bin (on the unit's PATH). creates= makes this a no-op once
+      # probe-rs is present.
+      ansible.builtin.shell:
+        cmd: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          export CARGO_HOME="$tmp/.cargo"
+          curl --proto '=https' --tlsv1.2 -LsSf \
+            https://github.com/probe-rs/probe-rs/releases/latest/download/probe-rs-tools-installer.sh | sh
+          install -m 0755 "$CARGO_HOME"/bin/* /usr/local/bin/
+          rm -rf "$tmp"
+        creates: /usr/local/bin/probe-rs
+
+    - name: Create the dedicated MCP service user
+      ansible.builtin.user:
+        name: "{{ ramus_mcp_service_user }}"
+        system: true
+        create_home: true
+        home: "{{ ramus_mcp_home }}"
+        shell: /usr/sbin/nologin
+        # dialout: USB-serial (/dev/ttyACM*); audio: ALSA MIDI (/dev/snd). Raw USB
+        # access to the probe is granted by the udev rule below, which hands the
+        # device to this user's primary group (created with the user).
+        groups: [dialout, audio]
+        append: true
+
+    - name: Ensure the service home + uv environment/cache dirs exist
+      # Home is 0755 (not useradd's default 0700) so the SSH user running the
+      # rsync below can traverse into the repo tree underneath it; it holds only
+      # the venv + checked-out repo the service reads, no secrets. venv/cache are
+      # writable by the service user for uv's on-host build.
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ ramus_mcp_service_user }}"
+        group: "{{ ramus_mcp_service_user }}"
+        mode: "0755"
+      loop:
+        - "{{ ramus_mcp_home }}"
+        - "{{ ramus_mcp_home }}/venv"
+        - "{{ ramus_mcp_home }}/.cache/uv"
+
+    - name: Pre-create the repo parent dirs (owned by the deploy user)
+      # synchronize runs rsync as the SSH/deploy user (it can't escalate via
+      # become), and rsync only creates the final dest component — so the parent
+      # chain up to mcp-server/ must already exist. The checkout is owned by the
+      # deploy user, not the service user: the service only READS the code (uv
+      # builds its venv under $HOME, outside the tree), so a deploy-user-owned,
+      # world-readable tree is all it needs — and it keeps re-runs writable.
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0755"
+      loop:
+        - "{{ ramus_mcp_repo_dir }}"
+        - "{{ ramus_mcp_repo_dir }}/tools"
+        - "{{ ramus_mcp_repo_dir }}/tools/agentic"
+        - "{{ ramus_mcp_repo_dir }}/tools/agentic/hardware"
+
+    - name: Reclaim the mcp-server tree for the deploy user before syncing
+      # Idempotency guard: an earlier revision of this play chowned the synced tree
+      # to the service user, which left the become:false rsync below unable to write
+      # into the now service-user-owned subdirs (mkstemp: Permission denied).
+      # Recursively reclaim ownership for the deploy user. state=directory creates
+      # the dir on a fresh host (harmless no-op there); recurse repairs an existing
+      # tree. No mode here, so rsync's --archive perms are left intact.
+      ansible.builtin.file:
+        path: "{{ ramus_mcp_repo_dir }}/tools/agentic/hardware/mcp-server"
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        recurse: true
+
+    - name: Sync the MCP server tree from the control node
+      # Plain rsync as the deploy user into the deploy-user-owned dest above. The
+      # tree stays deploy-user-owned and world-readable; the service user reads it
+      # as "other" (dirs 0755, .py 0644). .venv is excluded - uv rebuilds it on the
+      # host into $HOME.
+      ansible.posix.synchronize:
+        src: "{{ ramus_mcp_src_dir }}/tools/agentic/hardware/mcp-server/"
+        dest: "{{ ramus_mcp_repo_dir }}/tools/agentic/hardware/mcp-server/"
+        delete: true
+        rsync_opts:
+          - "--exclude=.venv"
+          - "--exclude=.git"
+          - "--exclude=__pycache__"
+          - "--exclude=.pytest_cache"
+      become: false
+      notify: Restart hardware-mcp
+
+    - name: Install the probe-utils.sh helper the server shells out to
+      # REPO_TOOLS_DIR/probe-utils.sh - run by the server for every flash/reset.
+      # Owned by the deploy user like the rest of the checkout; mode 0755 so the
+      # service user (as "other") can execute it.
+      ansible.builtin.copy:
+        src: "{{ ramus_mcp_src_dir }}/tools/probe-utils.sh"
+        dest: "{{ ramus_mcp_repo_dir }}/tools/probe-utils.sh"
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+        mode: "0755"
+      notify: Restart hardware-mcp
+
+    - name: Install udev rules for the Daisy bench USB devices
+      ansible.builtin.copy:
+        dest: /etc/udev/rules.d/99-daisy-seed.rules
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          # Hand the bench's USB devices to the MCP service user's group so the
+          # headless daemon can flash/probe them. (TAG+="uaccess" only covers
+          # interactively logged-in seat users, not a service account.)
+          #
+          # A single flash touches THREE distinct device nodes, so all three need
+          # the rule (probe-utils.sh: dfu-util uploads to df11, OpenOCD drives the
+          # ST-Link for reset_and_halt + RTT flush):
+          #   0483:5740  Daisy Seed app mode (USB-serial / MIDI)
+          #   0483:df11  STM32 ROM DFU bootloader (transient mode during flash)
+          #   0483:374*  ST-Link probe family (V2/V2-1/V3) used via stlink.cfg
+          SUBSYSTEM=="usb", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="5740", MODE="0660", GROUP="{{ ramus_mcp_service_user }}"
+          SUBSYSTEM=="usb", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="df11", MODE="0660", GROUP="{{ ramus_mcp_service_user }}"
+          SUBSYSTEM=="usb", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374?", MODE="0660", GROUP="{{ ramus_mcp_service_user }}"
+      notify: Reload udev
+
+    - name: Install the hardware-mcp systemd unit
+      ansible.builtin.template:
+        src: hardware-mcp/hardware-mcp.service.j2
+        dest: /etc/systemd/system/hardware-mcp.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart hardware-mcp
+
+    - name: Enable hardware-mcp
+      ansible.builtin.systemd:
+        name: hardware-mcp.service
+        enabled: true
+        daemon_reload: true
+
+  handlers:
+    - name: Reload udev
+      ansible.builtin.shell: udevadm control --reload && udevadm trigger
+
+    - name: Restart hardware-mcp
+      ansible.builtin.systemd:
+        name: hardware-mcp.service
+        state: restarted
+        daemon_reload: true

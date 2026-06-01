@@ -2,29 +2,17 @@
 - name: Deploy Quadlet-managed containers
   hosts: server
   become: yes
+  # Caddy (the shared TLS ingress) is deployed separately by deploy_services_caddy.yml,
+  # which runs AFTER this play so every backend is up before the proxy forwards.
+  # This play still owns the shared `forgejo` podman network that Caddy and the
+  # backends both join — it must exist first, so it lives with the backends.
   vars:
     quadlet_dir: /etc/containers/systemd
-    caddy_build_dir: /var/lib/homelab/caddy/build
-    caddy_image: localhost/caddy-wedos:latest
     container_units:
-      - caddy
       - forgejo
       - glances
       - dashy
   tasks:
-    # Podman does not create missing bind-mount source directories, so the
-    # per-container data dirs must exist before the units start.
-    - name: Ensure Caddy data directories exist
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: directory
-        owner: root
-        group: root
-        mode: "0755"
-      loop:
-        - /var/lib/homelab/caddy/data
-        - /var/lib/homelab/caddy/config
-
     # Forgejo runs as USER_UID/USER_GID 1000 inside the container, so its
     # bind-mounted data dirs must be owned by uid/gid 1000 on the host (rootful
     # podman maps container uid 1000 to host uid 1000). Otherwise the git user
@@ -92,79 +80,6 @@
         - runner.token != "PASTE_TOKEN_HERE"
       register: runner_config_files
       no_log: true
-
-    # --- Custom Caddy image (bundles the vendored WEDOS DNS provider) ---
-    - name: Ensure Caddy build directory exists
-      ansible.builtin.file:
-        path: "{{ caddy_build_dir }}"
-        state: directory
-        owner: root
-        group: root
-        mode: "0755"
-
-    - name: Copy Caddy Containerfile
-      ansible.builtin.copy:
-        src: files/caddy/Containerfile
-        dest: "{{ caddy_build_dir }}/Containerfile"
-        owner: root
-        group: root
-        mode: "0644"
-      register: caddy_containerfile
-
-    - name: Copy vendored WEDOS DNS provider module
-      ansible.builtin.copy:
-        src: files/caddy/caddy-wedos/
-        dest: "{{ caddy_build_dir }}/caddy-wedos/"
-        owner: root
-        group: root
-        mode: "0644"
-      register: caddy_wedos_src
-
-    - name: Check whether the custom Caddy image already exists
-      ansible.builtin.command:
-        cmd: "podman image exists {{ caddy_image }}"
-      register: caddy_image_present
-      changed_when: false
-      failed_when: false
-
-    - name: Build the custom Caddy image
-      ansible.builtin.command:
-        cmd: "podman build -t {{ caddy_image }} {{ caddy_build_dir }}"
-      when: >
-        caddy_containerfile.changed
-        or caddy_wedos_src.changed
-        or caddy_image_present.rc != 0
-      register: caddy_build
-      changed_when: caddy_build.rc == 0
-      notify: Restart caddy
-
-    # --- Caddy runtime config + secrets ---
-    - name: Deploy WEDOS WAPI environment file
-      ansible.builtin.template:
-        src: templates/caddy/wedos.env.j2
-        dest: /var/lib/homelab/caddy/wedos.env
-        owner: root
-        group: root
-        mode: "0600"
-      notify: Restart caddy
-
-    - name: Deploy Glances basic-auth environment file
-      ansible.builtin.template:
-        src: templates/caddy/glances.env.j2
-        dest: /var/lib/homelab/caddy/glances.env
-        owner: root
-        group: root
-        mode: "0600"
-      notify: Restart caddy
-
-    - name: Install Caddyfile
-      ansible.builtin.copy:
-        src: files/caddy/Caddyfile
-        dest: /var/lib/homelab/caddy/Caddyfile
-        owner: root
-        group: root
-        mode: "0644"
-      notify: Restart caddy
 
     # --- Quadlet units ---
     - name: Install network Quadlet unit
@@ -283,12 +198,6 @@
     - name: Reload systemd
       ansible.builtin.systemd_service:
         daemon_reload: true
-
-    - name: Restart caddy
-      ansible.builtin.systemd_service:
-        name: caddy.service
-        state: restarted
-      failed_when: false
 
     - name: Restart dashy
       ansible.builtin.systemd_service:

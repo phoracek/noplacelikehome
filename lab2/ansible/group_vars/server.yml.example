@@ -67,3 +67,23 @@ forgejo_runners:
   - name: forgejo-runner-2
     uuid: "PASTE_UUID_HERE"
     token: "PASTE_TOKEN_HERE"
+
+# Credentials gating the hardware-bench MCP control channel (acquire_lock,
+# served behind Caddy at https://ramus-mcp.lab.pacmag.cz). ramus_mcp_basic_auth_password_hash
+# is a bcrypt hash (pip install bcrypt); generate it the same way as Glances above:
+#
+#   python3 -c 'import bcrypt, getpass; print(bcrypt.hashpw(getpass.getpass("Password: ").encode(), bcrypt.gensalt(14)).decode())'
+ramus_mcp_basic_auth_user: "petr"
+ramus_mcp_basic_auth_password_hash: "REPLACE_WITH_BCRYPT_HASH"
+
+# Hardware bench MCP (deploy_services_ramus_mcp.yml). Runs as a dedicated, unprivileged
+# system user that the play creates (home under /var/lib/<user>, nologin shell) -
+# not a human account.
+#
+# ramus_mcp_src_dir is the ramus repo root on the CONTROL NODE (the machine you run
+# ansible from); the play rsyncs the mcp-server tree + tools/probe-utils.sh from
+# there to ramus_mcp_repo_dir on the T470s. Keep ramus_mcp_repo_dir out of a 0700
+# home dir so the service user can read it (the default sits in its own home).
+ramus_mcp_service_user: "ramus-mcp"
+ramus_mcp_src_dir: "/home/petr/Code/ramus/instance-agentic-move-to-homelab"
+ramus_mcp_repo_dir: "/var/lib/ramus-mcp/instance-agentic-move-to-homelab"

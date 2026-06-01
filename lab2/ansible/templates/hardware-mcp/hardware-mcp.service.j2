@@ -1,0 +1,35 @@
+# Managed by Ansible (deploy_services_ramus_mcp.yml). Native host service running as a
+# dedicated unprivileged user: the bench MCP needs local USB, probe-rs and ALSA,
+# so it runs on the host rather than in a container. Caddy fronts it at
+# https://ramus-mcp.lab.pacmag.cz (see the Caddyfile).
+[Unit]
+Description=Hardware bench MCP server (Daisy Seed flash/RTT/MIDI)
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ ramus_mcp_service_user }}
+Group={{ ramus_mcp_service_user }}
+# dialout (USB-serial) + audio (ALSA MIDI); raw USB access to the probe comes from
+# the udev rule that sets GROUP={{ ramus_mcp_service_user }} on the device node.
+SupplementaryGroups=dialout audio
+WorkingDirectory={{ ramus_mcp_repo_dir }}/tools/agentic/hardware/mcp-server
+Environment=HOME=/var/lib/{{ ramus_mcp_service_user }}
+# Keep uv's environment and cache in the service user's home, so it never tries to
+# write a .venv into the (possibly other-owned) repo checkout.
+Environment=UV_PROJECT_ENVIRONMENT=/var/lib/{{ ramus_mcp_service_user }}/venv
+Environment=UV_CACHE_DIR=/var/lib/{{ ramus_mcp_service_user }}/.cache/uv
+Environment=PATH=/var/lib/{{ ramus_mcp_service_user }}/.local/bin:/var/lib/{{ ramus_mcp_service_user }}/.cargo/bin:/usr/local/bin:/usr/bin:/bin
+# Bind on all interfaces so the Caddy container can reach it over the podman
+# bridge; the listener is kept off the LAN by the firewall (see README). The
+# returned prepare_* URLs are rooted at the public HTTPS base, so clients are
+# sent back through Caddy on 443 rather than to the raw :8766 listener.
+Environment=HARDWARE_MCP_HOST=0.0.0.0
+Environment=HARDWARE_MCP_PUBLIC_BASE_URL=https://ramus-mcp.lab.pacmag.cz
+ExecStart=/bin/bash run.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

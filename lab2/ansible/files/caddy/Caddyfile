@@ -53,3 +53,36 @@ lab.pacmag.cz {
 	import wedos_tls
 	reverse_proxy dashy:8080
 }
+
+ramus-mcp.lab.pacmag.cz {
+	import wedos_tls
+
+	# /reopen and /probe-reset take no token and are localhost-only recovery
+	# endpoints (hit on 127.0.0.1 directly) — never expose them at the edge.
+	@maint path /reopen /probe-reset
+	respond @maint 403
+
+	# Deny by default: require HTTP basic auth on every path EXCEPT the
+	# token-authenticated data plane (creds templated by Ansible from the
+	# gitignored group_vars, same as the Glances ones). A new server route that
+	# mints a lock token therefore fails CLOSED — it's covered by @protected
+	# automatically — rather than slipping through an allowlist nobody updated.
+	#
+	# The exempt data plane is the set of routes whose own one-time lock token IS
+	# the credential: the upload/stream/socket endpoints (/flash/<id>, /attach/<id>,
+	# /midi/<id>), the token-gated prepare_* + unlock REST calls (every /api/v1/*
+	# except the token-minting /api/v1/lock), and the unauthenticated health check.
+	# Everything else — /sse, /messages, /api/v1/lock, and any future route —
+	# requires basic auth.
+	@protected not path /flash/* /attach/* /midi/* /api/v1/ping /api/v1/unlock /api/v1/prepare-*
+	basic_auth @protected {
+		{$RAMUS_MCP_BASIC_AUTH_USER} {$RAMUS_MCP_BASIC_AUTH_PASSWORD_HASH}
+	}
+
+	# The bench MCP runs as a host systemd service (needs local USB/probe-rs/ALSA),
+	# not a container, so Caddy reaches it across the boundary via the host gateway.
+	# The server's transport-security allowlist now trusts this public hostname
+	# (HARDWARE_MCP_PUBLIC_BASE_URL on the unit), so we forward the real Host — no
+	# loopback spoof, and no hidden coupling to the listener's port.
+	reverse_proxy host.containers.internal:8766
+}

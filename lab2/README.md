@@ -42,25 +42,37 @@ host gets 192.168.88.254 before proceeding.
 ssh-copy-id petr@192.168.88.254
 ```
 
-Provision the host. Before `deploy_containers.yml`, copy
+Provision the host. Before deploying services, copy
 `group_vars/server.yml.example` to `group_vars/server.yml` (gitignored) and fill
 in the credentials it documents: the Wedos WAPI credentials Caddy uses for TLS
 (see [Forgejo and TLS](#forgejo-and-tls)) and the Glances basic-auth credentials
-(see [Glances](#glances)).
+(see [Glances](#glances)). Install the `ansible.posix` collection too — the
+hardware-MCP play uses its `synchronize` (rsync) module.
+
+The host bootstrap + OS-maintenance playbooks run first; then a single
+`deploy_services.yml` deploys all the services (it imports
+`deploy_services_ramus_mcp` → `deploy_services_containerized_applications` →
+`deploy_services_caddy` → `deploy_services_backups` in dependency order: backends
+first, the shared Caddy ingress last). Each imported playbook is still runnable
+on its own when you only need to touch one service.
 
 ```sh
 sudo dnf install ansible
 cd ansible
 cp group_vars/server.yml.example group_vars/server.yml   # then edit in the WAPI credentials
+ansible-galaxy collection install -r requirements.yml
 ansible-playbook -i inventory.file -u petr    -K create_ansible_user.yml
 ansible-playbook -i inventory.file -u ansible    update_dnf_packages.yml
 ansible-playbook -i inventory.file -u ansible    install_dnf_automatic.yml
 ansible-playbook -i inventory.file -u ansible    install_podman.yml
-ansible-playbook -i inventory.file -u ansible    deploy_containers.yml
-ansible-playbook -i inventory.file -u ansible    install_backup.yml
+ansible-playbook -i inventory.file -u ansible    deploy_services.yml
 ```
 
-After `deploy_containers.yml` the following services are running:
+To redeploy a single service instead of everything, run its playbook directly,
+e.g. `ansible-playbook -i inventory.file -u ansible deploy_services_caddy.yml` (just the
+proxy) or `... deploy_services_ramus_mcp.yml` (just the hardware MCP host service).
+
+After `deploy_services.yml` the following services are running:
 
 | Service | URL | Purpose |
 |---------|-----|---------|
@@ -212,12 +224,12 @@ server.
 
    Entries left on the `PASTE_*` placeholders are skipped — no `config.yml` is
    written and the runner is not started, so you can fill them in one at a time.
-3. Re-run `deploy_containers.yml`. It writes one
+3. Re-run `deploy_services_containerized_applications.yml`. It writes one
    `/var/lib/homelab/<name>/config.yml`, renders one Quadlet per entry, and
    starts each runner once its credentials are real:
 
    ```sh
-   ansible-playbook -i inventory.file -u ansible deploy_containers.yml
+   ansible-playbook -i inventory.file -u ansible deploy_services_containerized_applications.yml
    ```
 
    The Quadlet's `WantedBy=` handles auto-start at boot.
@@ -327,13 +339,13 @@ needed: client access rides the existing `443` rule.
 The dashboard is declarative: its tile layout lives in
 `ansible/files/dashy/conf.yml` and is copied to the host (no secrets, so it is
 checked into the repo rather than templated from `group_vars`). Edit that file
-and re-run `deploy_containers.yml` to change the tiles; Ansible restarts the
+and re-run `deploy_services_containerized_applications.yml` to change the tiles; Ansible restarts the
 container so Dashy reloads the config.
 
 ## Backups
 
 All persistent service state lives in host bind mounts under
-`/var/lib/homelab/`. `install_backup.yml` installs a small backup script
+`/var/lib/homelab/`. `deploy_services_backups.yml` installs a small backup script
 (`/usr/local/sbin/homelab-backup.sh`) driven by a systemd timer
 (`homelab-backup.timer`) that runs **daily at 04:00**. Each run tars + gzips the
 data into a dated archive under `/var/backups/homelab/`
@@ -344,7 +356,7 @@ What's captured: Caddy's issued certs and ACME state (`caddy/data`,
 `glances.env`), Forgejo's `gitea.db` and metadata (`forgejo/gitea`), its git
 repositories (`forgejo/git`) and runtime data (`forgejo/var`), and the Dashy
 config. The transient Caddy build dir (`caddy/build`) is excluded — it's rebuilt
-from the repo on every `deploy_containers.yml` run, and Glances has no
+from the repo on every `deploy_services_caddy.yml` run, and Glances has no
 persistent state. The backup destination is mode `0700` because the archives
 contain those 0600 secrets.
 
@@ -378,3 +390,44 @@ systemctl start caddy.service forgejo.service glances.service dashy.service
 MikroTik [Back To Home](https://help.mikrotik.com/docs/spaces/ROS/pages/197984280/Back+To+Home)
 can be used to create a WireGuard tunnel to the router and connect to the lab
 from outside the home network.
+
+## Hardware bench MCP
+
+`ramus-mcp.lab.pacmag.cz` fronts the hardware bench MCP server (Daisy Seed
+flash / RTT / MIDI) from the `ramus` repo. Unlike the other services it runs as a
+**native systemd service on the host**, not a container, because it needs local
+USB, `probe-rs`, and ALSA MIDI access to the physically attached board.
+
+- Deploy: `ansible-playbook -i inventory.file -u ansible deploy_services_ramus_mcp.yml`.
+  It runs under a dedicated unprivileged service user (`ramus_mcp_service_user`,
+  default `ramus-mcp`) that the play creates and adds to the `dialout`/`audio`
+  groups, plus udev rules handing the Daisy's three USB nodes (app mode, DFU
+  bootloader, ST-Link probe) to that user's own group (so a headless daemon gets
+  USB access — `uaccess` only covers logged-in seats). The play
+  **rsyncs the code itself** from the control node: it pushes the `mcp-server/`
+  tree plus the `tools/probe-utils.sh` helper the server shells out to on every
+  flash (set `ramus_mcp_src_dir` to the ramus repo root on your workstation),
+  excluding the on-host `.venv` (uv rebuilds it into the service user's home).
+  It also installs the bench's runtime deps into `/usr/local/bin`: `uv` +
+  `probe-rs` (official install scripts) and `openocd` + `dfu-util` **built from
+  source** (both are used by `probe-utils.sh` for flash/reset and neither has an
+  EPEL 10 build; pin versions via `openocd_version` / `dfu_util_version`). The
+  build adds a few minutes to the first run and is skipped on reruns. `alsa-lib`
+  (the libasound `python-rtmidi` links against) comes from dnf. Remaining prereqs:
+  the `ansible.posix` collection on the control node for the rsync module
+  (`ansible-galaxy collection install -r requirements.yml`; the full `ansible`
+  package already bundles it), and outbound internet on the host at deploy time.
+  The Caddy site block, credentials env file, and DNS-01 cert are handled by
+  `deploy_services_caddy.yml`.
+- DNS: add an A record `ramus-mcp.lab.pacmag.cz` -> `192.168.88.254`.
+- Auth: Caddy requires HTTP basic auth (`ramus_mcp_basic_auth_user` /
+  `ramus_mcp_basic_auth_password_hash` in `group_vars/server.yml`) on every path
+  **except** the token-authenticated data plane (`/flash/*`, `/attach/*`,
+  `/midi/*`, and the token-gated `/api/v1/*` calls), which is gated by the
+  server's own one-time lock token. Deny-by-default: a new token-minting route
+  (e.g. `/sse`, `/api/v1/lock`) is covered automatically rather than relying on an
+  allowlist. `/reopen` + `/probe-reset` are blocked outright at the edge.
+- Firewall: do **not** open `8766/tcp` to the LAN - clients reach the bench only
+  through Caddy on 443. The service binds `0.0.0.0` so the Caddy container can
+  reach it over the podman bridge (`host.containers.internal`); if the default
+  firewalld zone blocks it, allow the podman bridge subnet to reach host port 8766.
