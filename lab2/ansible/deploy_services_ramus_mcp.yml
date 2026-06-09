@@ -13,9 +13,10 @@
 # The play also installs the bench's runtime dependencies into /usr/local/bin
 # (on the unit's PATH): uv + probe-rs via their official install scripts, and
 # openocd + dfu-util built from source (probe-utils.sh drives both for flash/reset;
-# neither has an EPEL 10 build). alsa-lib (libasound for python-rtmidi) comes from
-# dnf. Building openocd/dfu-util needs outbound internet and adds a few minutes to
-# the first run; the creates= guards skip the compile on subsequent runs.
+# neither has an EPEL 10 build). alsa-lib (libasound for python-rtmidi) and
+# ffmpeg-free (record_audio's FLAC capture; EPEL 10) come from dnf. Building
+# openocd/dfu-util needs outbound internet and adds a few minutes to the first
+# run; the creates= guards skip the compile on subsequent runs.
 #
 # Prerequisites NOT handled here: the ansible.posix collection on the control
 # node for the rsync module (see requirements.yml - the full `ansible` package
@@ -38,6 +39,11 @@
   tasks:
     - name: Install build + runtime dependencies from dnf
       # alsa-lib: libasound that python-rtmidi links against (BaseOS).
+      # ffmpeg-free: record_audio shells out to `ffmpeg -f alsa ... -c:a flac`.
+      # The EPEL build (epel-release is enabled by install_podman.yml) strips the
+      # patent-encumbered codecs but keeps FLAC, which is all the server uses.
+      # alsa-utils: arecord -l / -L, for pinning ramus_mcp_audio_device to the
+      # bench mic's ALSA id.
       # rsync: required on the host for the code-sync task below (not in the
       # minimal install). The rest build openocd + dfu-util from source:
       # libusb1-devel is what drives the ST-Link probe (interface/stlink.cfg) and
@@ -46,6 +52,8 @@
       ansible.builtin.dnf:
         name:
           - alsa-lib
+          - alsa-utils
+          - ffmpeg-free
           - rsync
           - gcc
           - make

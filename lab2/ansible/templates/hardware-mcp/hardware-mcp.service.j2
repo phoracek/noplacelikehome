@@ -27,6 +27,9 @@ Environment=PATH=/var/lib/{{ ramus_mcp_service_user }}/.local/bin:/var/lib/{{ ra
 # sent back through Caddy on 443 rather than to the raw :8766 listener.
 Environment=HARDWARE_MCP_HOST=0.0.0.0
 Environment=HARDWARE_MCP_PUBLIC_BASE_URL=https://ramus-mcp.lab.pacmag.cz
+# ALSA capture device for record_audio (ramus_mcp_audio_device in group_vars;
+# pin it to the bench mic's id from `arecord -L`, e.g. plughw:CARD=Micro,DEV=0).
+Environment=HARDWARE_MCP_AUDIO_DEVICE={{ ramus_mcp_audio_device }}
 ExecStart=/bin/bash run.sh
 Restart=always
 RestartSec=5
