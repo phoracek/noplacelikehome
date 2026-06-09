@@ -33,20 +33,16 @@
 wedos_username: "your-wedos-account-login"
 wedos_password: "your-wapi-password"
 
-# HTTP basic-auth credentials Caddy uses to gate the Glances web UI
-# (glances.t470s.lab.pacmag.cz). Glances itself has no authentication, so this is
-# the only thing standing between a host on the lab network and a read-only view
-# of every host process's command line.
+# VoidAuth (auth.lab.pacmag.cz) is the single sign-on provider: it gates Glances
+# and Dashy via Caddy forward_auth, and is the OIDC provider for Forgejo and Grist.
+# STORAGE_KEY encrypts secret values VoidAuth stores at rest (OIDC client secrets,
+# signing keys); it must be at least 32 characters and random. Generate:
 #
-# glances_password_hash is a *bcrypt hash*, not the plaintext password (the hash,
-# not the password, lives on disk). Generate it with Python (pip install bcrypt);
-# getpass keeps the password out of your shell history:
+#   openssl rand -base64 48
 #
-#   python3 -c 'import bcrypt, getpass; print(bcrypt.hashpw(getpass.getpass("Password: ").encode(), bcrypt.gensalt(14)).decode())'
-#
-# Copy the resulting $2b$ string verbatim into glances_password_hash.
-glances_user: "admin"
-glances_password_hash: "$2a$14$replace-with-a-real-bcrypt-hash"
+# Keep this stable once set — rotating it invalidates the encrypted-at-rest
+# secrets (VoidAuth supports STORAGE_KEY_SECONDARY for a rotation window).
+voidauth_storage_key: "replace-with-a-long-random-string-at-least-32-chars"
 
 # Forgejo Actions runners. Each entry becomes one systemd unit, one container,
 # and one data dir (/var/lib/homelab/<name>/). Add or remove entries to change
@@ -87,3 +83,20 @@ ramus_mcp_basic_auth_password_hash: "REPLACE_WITH_BCRYPT_HASH"
 ramus_mcp_service_user: "ramus-mcp"
 ramus_mcp_src_dir: "/home/petr/Code/ramus/instance-agentic-move-to-homelab"
 ramus_mcp_repo_dir: "/var/lib/ramus-mcp/instance-agentic-move-to-homelab"
+
+# ALSA capture device for record_audio (passed to `ffmpeg -f alsa -i` via
+# HARDWARE_MCP_AUDIO_DEVICE on the unit). "default" works until the bench mic's
+# id is pinned — find it on the host with `arecord -l` / `arecord -L` and set
+# e.g. "plughw:CARD=Micro,DEV=0".
+ramus_mcp_audio_device: "default"
+
+# Grist (grist.lab.pacmag.cz). Grist authenticates users itself via OIDC against
+# VoidAuth (per-user accounts), so it needs two secrets:
+#   * grist_session_secret signs Grist's own session cookies — any long random
+#     string: openssl rand -hex 32
+#   * grist_oidc_client_secret is the client secret of the Grist OIDC App created
+#     in the VoidAuth admin UI (redirect URI
+#     https://grist.lab.pacmag.cz/oauth2/callback, client id "grist"). Copy the
+#     secret VoidAuth generates for that app.
+grist_session_secret: "replace-with-a-long-random-string"
+grist_oidc_client_secret: "replace-with-the-voidauth-grist-client-secret"

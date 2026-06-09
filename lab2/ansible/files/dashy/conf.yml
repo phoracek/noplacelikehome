@@ -28,3 +28,11 @@ sections:
         icon: hl-glances
         url: https://glances.t470s.lab.pacmag.cz
         target: newtab
+
+      # Grist isn't in the homelab-svg-assets set (hl-) the other tiles use, so
+      # point at the dashboard-icons CDN by full URL.
+      - title: Grist
+        description: Spreadsheet / database
+        icon: https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/grist.svg
+        url: https://grist.lab.pacmag.cz
+        target: newtab

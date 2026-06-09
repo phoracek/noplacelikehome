@@ -33,6 +33,16 @@ Environment=FORGEJO__server__SSH_LISTEN_PORT=2222
 Environment=FORGEJO__server__SSH_PORT=2222
 Environment=FORGEJO__server__SSH_DOMAIN=forge.lab.pacmag.cz
 Environment=FORGEJO__database__DB_TYPE=sqlite3
+# OAuth2/OIDC login via VoidAuth (the auth source itself is added once in the
+# admin UI). ACCOUNT_LINKING=auto links an OIDC login to the existing local user
+# whose email matches the OIDC `email` claim instead of minting a duplicate — so
+# the first sign-in through VoidAuth lands on the existing admin account (admin
+# rights intact), provided the VoidAuth user's email matches it. USERNAME=email
+# derives the username from the email claim; ENABLE_AUTO_REGISTRATION lets a
+# never-seen identity create an account (single trusted IdP, fine here).
+Environment=FORGEJO__oauth2_client__ENABLE_AUTO_REGISTRATION=true
+Environment=FORGEJO__oauth2_client__ACCOUNT_LINKING=auto
+Environment=FORGEJO__oauth2_client__USERNAME=email
 Environment=FORGEJO__actions__ENABLED=true
 Environment=FORGEJO__actions__DEFAULT_ACTIONS_URL=https://code.forgejo.org
 Environment=TZ=Europe/Prague

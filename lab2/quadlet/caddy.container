@@ -13,9 +13,10 @@ PublishPort=443:443
 # WEDOS WAPI credentials for the DNS-01 challenge (gitignored, templated by
 # Ansible from group_vars/server.yml).
 EnvironmentFile=/var/lib/homelab/caddy/wedos.env
-# HTTP basic-auth credentials gating the Glances site (username + bcrypt hash),
-# same provenance as the WEDOS creds above.
-EnvironmentFile=/var/lib/homelab/caddy/glances.env
+# HTTP basic-auth credentials gating the ramus-mcp control channel (username +
+# bcrypt hash), same provenance as the WEDOS creds above. The app vhosts carry no
+# edge creds here — Glances/Dashy are gated by VoidAuth forward_auth and Forgejo/
+# Grist authenticate via VoidAuth OIDC, none of which needs a secret in Caddy.
 EnvironmentFile=/var/lib/homelab/caddy/ramus-mcp.env
 Volume=/var/lib/homelab/caddy/Caddyfile:/etc/caddy/Caddyfile:Z
 Volume=/var/lib/homelab/caddy/data:/data:Z

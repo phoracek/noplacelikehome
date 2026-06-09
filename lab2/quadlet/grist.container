@@ -1,0 +1,50 @@
+[Unit]
+Description=Grist spreadsheet / database
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=docker.io/gristlabs/grist:latest
+ContainerName=grist
+# Web UI is internal-only: it joins the shared network with Caddy and publishes
+# no host port, reachable only via Caddy at https://grist.lab.pacmag.cz. Grist
+# serves on port 8484 inside the container (single-port mode). Grist authenticates
+# users itself via OIDC against VoidAuth (below), so Caddy just reverse-proxies it
+# — no edge forward_auth gate, unlike Glances/Dashy.
+Network=forgejo.network
+# Persistent documents + home DB live under /persist. Podman won't create the
+# bind-mount source, so Ansible makes /var/lib/homelab/grist/data first.
+Volume=/var/lib/homelab/grist/data:/persist:Z
+# GRIST_SESSION_SECRET (signs session cookies) and GRIST_OIDC_IDP_CLIENT_SECRET
+# (the VoidAuth OIDC client secret) are secrets, so they're templated by Ansible
+# from the gitignored group_vars/server.yml into this 0600 env file rather than
+# committed inline here.
+EnvironmentFile=/var/lib/homelab/grist/grist.env
+Environment=APP_HOME_URL=https://grist.lab.pacmag.cz/
+# Per-user login via OIDC against VoidAuth. The issuer is VoidAuth's provider mount
+# (APP_URL + /oidc); Grist discovers endpoints at <issuer>/.well-known/openid-configuration
+# and registers redirect_uri <SP_HOST>/oauth2/callback. GRIST_FORCE_LOGIN sends any
+# anonymous hit to the OIDC login. The client secret is in the env file above.
+# IGNORE_EMAIL_VERIFIED because VoidAuth runs without SMTP, so it doesn't assert a
+# verified-email claim — fine for this single-trusted-IdP homelab.
+Environment=GRIST_OIDC_IDP_ISSUER=https://auth.lab.pacmag.cz/oidc
+Environment=GRIST_OIDC_IDP_CLIENT_ID=grist
+Environment=GRIST_OIDC_SP_HOST=https://grist.lab.pacmag.cz
+Environment=GRIST_OIDC_SP_IGNORE_EMAIL_VERIFIED=true
+# Existing documents are owned by this email; logging in via OIDC with the same
+# address (the VoidAuth user's email) lands on that account, so ownership and all
+# existing docs carry over. Also designates the Grist install admin.
+Environment=GRIST_DEFAULT_EMAIL=p.horacek94@gmail.com
+Environment=GRIST_FORCE_LOGIN=true
+# Run the Python data-engine unsandboxed: gVisor (the image default) needs extra
+# privileges (SYS_PTRACE + unconfined seccomp) under rootful Podman. Acceptable
+# for this trusted homelab instance.
+Environment=GRIST_SANDBOX_FLAVOR=unsandboxed
+Environment=TZ=Europe/Prague
+AutoUpdate=registry
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=multi-user.target default.target

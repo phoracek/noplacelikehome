@@ -96,15 +96,6 @@
         mode: "0600"
       notify: Restart caddy
 
-    - name: Deploy Glances basic-auth environment file
-      ansible.builtin.template:
-        src: templates/caddy/glances.env.j2
-        dest: /var/lib/homelab/caddy/glances.env
-        owner: root
-        group: root
-        mode: "0600"
-      notify: Restart caddy
-
     - name: Deploy ramus-mcp basic-auth environment file
       ansible.builtin.template:
         src: templates/caddy/ramus-mcp.env.j2

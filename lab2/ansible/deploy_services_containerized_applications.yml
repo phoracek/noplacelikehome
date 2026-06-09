@@ -12,6 +12,8 @@
       - forgejo
       - glances
       - dashy
+      - grist
+      - voidauth
   tasks:
     # Forgejo runs as USER_UID/USER_GID 1000 inside the container, so its
     # bind-mounted data dirs must be owned by uid/gid 1000 on the host (rootful
@@ -48,6 +50,62 @@
         group: root
         mode: "0644"
       notify: Restart dashy
+
+    # Grist persists documents under /persist; Podman won't create the bind-mount
+    # source, so the data dir must exist before the unit starts. The gristlabs
+    # image runs its server as the in-image `grist` user (uid/gid 1001), not root,
+    # so the host dir must be owned by 1001:1001 or Grist can't write its SQLite
+    # DBs and fails with "SQLITE_READONLY: attempt to write a readonly database"
+    # (rootful Podman maps container uid 1001 to host uid 1001). recurse fixes any
+    # root-owned files an earlier mis-owned boot may have left behind.
+    - name: Ensure Grist data directory exists (owned by the grist uid)
+      ansible.builtin.file:
+        path: /var/lib/homelab/grist/data
+        state: directory
+        owner: "1001"
+        group: "1001"
+        mode: "0755"
+        recurse: true
+
+    # GRIST_SESSION_SECRET signs Grist's session cookies; it's a secret so it's
+    # templated from the gitignored group_vars into a 0600 env file the grist
+    # container reads (EnvironmentFile in grist.container), not baked into the
+    # committed Quadlet unit.
+    - name: Install Grist environment file
+      ansible.builtin.template:
+        src: templates/grist/grist.env.j2
+        dest: /var/lib/homelab/grist/grist.env
+        owner: root
+        group: root
+        mode: "0600"
+      notify: Restart grist
+
+    # VoidAuth (the SSO/auth provider) bind-mounts its config and SQLite database;
+    # Podman won't create the bind-mount sources, so both dirs must exist before
+    # the unit starts. The image runs as root, so root:root is writable.
+    - name: Ensure VoidAuth data directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop:
+        - /var/lib/homelab/voidauth/config
+        - /var/lib/homelab/voidauth/db
+
+    # STORAGE_KEY (encrypts secrets at rest inside VoidAuth) is a secret, so it's
+    # templated from the gitignored group_vars into this 0600 env file the
+    # voidauth container reads (EnvironmentFile in voidauth.container), not baked
+    # into the committed Quadlet unit.
+    - name: Install VoidAuth environment file
+      ansible.builtin.template:
+        src: templates/voidauth/voidauth.env.j2
+        dest: /var/lib/homelab/voidauth/voidauth.env
+        owner: root
+        group: root
+        mode: "0600"
+      notify: Restart voidauth
 
     # Each Forgejo Actions runner bind-mounts /var/lib/homelab/<name> at /data
     # (its config.yml, action cache, workflow workdirs). Podman won't create the
@@ -202,5 +260,17 @@
     - name: Restart dashy
       ansible.builtin.systemd_service:
         name: dashy.service
+        state: restarted
+      failed_when: false
+
+    - name: Restart grist
+      ansible.builtin.systemd_service:
+        name: grist.service
+        state: restarted
+      failed_when: false
+
+    - name: Restart voidauth
+      ansible.builtin.systemd_service:
+        name: voidauth.service
         state: restarted
       failed_when: false
