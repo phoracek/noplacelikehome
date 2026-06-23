@@ -1,6 +1,6 @@
-# i3 config file (v4)
+# sway config file
 #
-# Please see https://i3wm.org/docs/userguide.html for a complete reference!
+# Please see https://github.com/swaywm/sway/wiki and `man 5 sway` for a complete reference!
 
 set $mod Mod4
 
@@ -8,9 +8,9 @@ set $mod Mod4
 # is used in the bar {} block below.
 font pango:monospace 10
 
-# xss-lock grabs a logind suspend inhibit lock and will use i3lock to lock the
-# screen before suspend. Use loginctl lock-session to lock your screen.
-exec --no-startup-id xss-lock --transfer-sleep-lock -- i3lock --nofork
+# swaylock locks the screen; pair with swayidle to lock before suspend.
+# Use loginctl lock-session to lock your screen.
+# XXX exec --no-startup-id swayidle -w before-sleep 'swaylock -f'
 
 # polkit authenticator
 exec --on-startup-id lxpolkit
@@ -18,19 +18,27 @@ exec --on-startup-id lxpolkit
 # Set wallpapaer
 exec --no-startup-id feh --bg-fill ~/wallpaper/*
 
+# Fix file choosers
+exec dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP=sway
+exec systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP
+
 # Use pactl to adjust volume in PulseAudio.
-set $refresh_i3status killall -SIGUSR1 i3status
-bindsym XF86AudioRaiseVolume exec --no-startup-id pactl set-sink-volume @DEFAULT_SINK@ +10% && $refresh_i3status
-bindsym XF86AudioLowerVolume exec --no-startup-id pactl set-sink-volume @DEFAULT_SINK@ -10% && $refresh_i3status
-bindsym XF86AudioMute exec --no-startup-id pactl set-sink-mute @DEFAULT_SINK@ toggle && $refresh_i3status
-bindsym XF86AudioMicMute exec --no-startup-id pactl set-source-mute @DEFAULT_SOURCE@ toggle && $refresh_i3status
+bindsym XF86AudioRaiseVolume exec --no-startup-id pactl set-sink-volume @DEFAULT_SINK@ +10%
+bindsym XF86AudioLowerVolume exec --no-startup-id pactl set-sink-volume @DEFAULT_SINK@ -10%
+bindsym XF86AudioMute exec --no-startup-id pactl set-sink-mute @DEFAULT_SINK@ toggle
+bindsym XF86AudioMicMute exec --no-startup-id pactl set-source-mute @DEFAULT_SOURCE@ toggle
 
 # Control screen brightness
-bindsym XF86MonBrightnessUp exec backlight up
-bindsym XF86MonBrightnessDown exec backlight down
+bindsym XF86MonBrightnessUp exec brightnessctl set +10%
+bindsym XF86MonBrightnessDown exec brightnessctl set 10%-
 
 # Keybord layout
 exec_always --no-startup-id "setxkbmap -layout us,cz -option 'grp:alt_shift_toggle'"
+
+input type:keyboard {
+    xkb_layout us,cz
+    xkb_options grp:alt_shift_toggle
+}
 
 # Use Mouse+$mod to drag floating windows to their wanted position
 floating_modifier $mod
@@ -48,7 +56,10 @@ bindsym $mod+p exec thunar
 bindsym $mod+Shift+q kill
 
 # start dmenu (a program launcher)
-bindsym $mod+d exec --no-startup-id dmenu_run
+bindsym $mod+d exec --no-startup-id dmenu-wl_run
+
+# ask Claude: prompt for a question, query `claude -p`, notify the answer
+bindsym $mod+u exec --no-startup-id ~/.config/sway/ask.sh
 
 # change focus
 bindsym $mod+j focus left
@@ -137,9 +148,6 @@ bindsym $mod+Shift+8 move container to workspace number $ws8
 bindsym $mod+Shift+9 move container to workspace number $ws9
 bindsym $mod+Shift+0 move container to workspace number $ws10
 
-# Force laptop screen to the right
-exec xrandr --output HDMI-2 --auto --left-of eDP-1
-
 # Split workspaces between screens
 workspace $ws1 output HDMI-2
 workspace $ws2 output HDMI-2
@@ -153,16 +161,12 @@ workspace $ws9 output eDP-1
 workspace $ws10 output eDP-1
 
 # reload the configuration file
-bindsym $mod+Shift+c reload
-# restart i3 inplace (preserves your layout/session, can be used to upgrade i3)
-bindsym $mod+Shift+r restart
-# exit i3 (logs you out of your X session)
-bindsym $mod+Shift+e exec "i3-nagbar -t warning -m 'You pressed the exit shortcut. Do you really want to exit i3? This will end your X session.' -B 'Yes, exit i3' 'i3-msg exit'"
-
-bindsym $mod+Shift+p exec "sh -c 'xrandr --output DP-1-3 --off ; xrandr --output DP-1-3 --auto'"
+bindsym $mod+Shift+r reload
+# exit sway (logs you out of your Wayland session)
+bindsym $mod+Shift+e exec "swaynag -t warning -m 'You pressed the exit shortcut. Do you really want to exit Sway? This will end your Wayland session.' -B 'Yes, exit Sway' 'swaymsg exit'"
 
 # dismiss notifications
-bindsym Control+space exec --no-startup-id dunstctl close
+bindsym Control+Shift+space exec --no-startup-id dunstctl close
 
 # resize window (you can also use the mouse for that)
 mode "resize" {
@@ -195,35 +199,32 @@ bindsym $mod+Shift+Return exec --no-startup-id alacritty --class floating --comm
 
 # Work with pomodoro timer
 mode "pomodoro [w]ork [b]reak [s]top" {
-        bindsym w exec "~/.config/i3/pomodoro.sh work && i3-msg mode default"
-        bindsym b exec "~/.config/i3/pomodoro.sh break && i3-msg mode default"
-        bindsym s exec "~/.config/i3/pomodoro.sh stop && i3-msg mode default"
+        bindsym w exec "~/.config/sway/pomodoro.sh work && swaymsg mode default"
+        bindsym b exec "~/.config/sway/pomodoro.sh break && swaymsg mode default"
+        bindsym s exec "~/.config/sway/pomodoro.sh stop && swaymsg mode default"
         bindsym Return mode "default"
         bindsym Escape mode "default"
 }
 
 bindsym $mod+o mode "pomodoro [w]ork [b]reak [s]top"
-bindsym $mod+Shift+O exec --no-startup-id alacritty --class floating --command ~/.config/i3/tasks.sh edit
+bindsym $mod+Shift+O exec --no-startup-id alacritty --class floating --command ~/.config/sway/tasks.sh edit
 
-# Per-application config, use `xprop` to find the class:
-for_window [class="Alacritty"] border pixel 2
-for_window [class="firefox"] border pixel 0
-for_window [class="Logseq"] border pixel 0
-for_window [class="Emacs"] border pixel 0
+# Per-application config, use `swaymsg -t get_tree` to find the class:
+for_window [app_id="Alacritty"] border pixel 2
+for_window [app_id="org.mozilla.firefox"] border pixel 0
 for_window [class="vlc"] border pixel 0
-for_window [class="todoist"] border pixel 0
 for_window [class="floating"] floating enabled move position center
 for_window [class="floating"] border pixel 2
 
 # don't focus mouse
 focus_follows_mouse no
 
-# Start i3bar to display a workspace bar (plus the system information i3status
-# finds out, if available)
+# Start swaybar to display a workspace bar (plus the system information the
+# status command finds out, if available)
 bar {
     position top
 
-    status_command while ~/.config/i3/status.sh; do sleep 10; done
+    status_command while ~/.config/sway/status.sh; do sleep 10; done
 
     colors {
         statusline #ffffff

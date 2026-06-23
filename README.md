@@ -1,10 +1,10 @@
 # noplacelikehome
 
-Bunch of dotfiles. Tested on ThinkPad T470s and T490s, Fedora 40 i3 spin.
+Bunch of dotfiles. Tested on ThinkPad T470s and T490s, Fedora 40 sway spin.
 
 ``` shell
 # Packages
-sudo dnf install -y git alacritty lxpolkit zsh xkill keepassxc
+sudo dnf install -y git alacritty lxpolkit zsh xkill keepassxc dmenu-wl brightnessctl wl-clipboard
 sudo dnf remove -y network-manager-applet volumeicon
 
 # Docking station (Lenovo Thunderbolt III gen 2)
@@ -43,20 +43,14 @@ rm -f go1.24.5.linux-amd64.tar.gz
 ~/.local/go/bin/go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.3.0
 ~/.local/go/bin/go install github.com/nametake/golangci-lint-langserver@latest
 
-# i3 config
-~/.cargo/bin/rustc ./i3/backlight.rs -o /tmp/backlight
-sudo mv /tmp/backlight /usr/bin/backlight
-sudo chown root:root /usr/bin/backlight
-sudo chmod 4775 /usr/bin/backlight
-cp ./i3/config ~/.config/i3/config
-cp ./i3/status.sh ~/.config/i3/status.sh
-cp ./i3/pomodoro.sh ~/.config/i3/pomodoro.sh
-cp ./i3/tasks.sh ~/.config/i3/tasks.sh
-sudo cp ./i3/note.sh /usr/bin/note
-cp ./i3/monitor-setup.sh ~/.config/i3/monitor-setup.sh
-sudo cp ./i3/99-monitor-hotplug.rules /etc/udev/rules.d/
-sudo udevadm control --reload-rules
-sudo udevadm trigger
+# sway config
+mkdir -p ~/.config/sway
+cp ./sway/config ~/.config/sway/config
+cp ./sway/status.sh ~/.config/sway/status.sh
+cp ./sway/pomodoro.sh ~/.config/sway/pomodoro.sh
+cp ./sway/tasks.sh ~/.config/sway/tasks.sh
+cp ./sway/ask.sh ~/.config/sway/ask.sh
+sudo cp ./sway/note.sh /usr/bin/note
 
 # Helix
 curl -L https://github.com/helix-editor/helix/releases/download/25.07.1/helix-25.07.1-x86_64.AppImage -o /tmp/hx

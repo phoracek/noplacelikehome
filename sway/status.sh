@@ -30,10 +30,10 @@ fi
 memory_available=$(free -h | awk 'FNR==2{print $7}')
 
 # Pomodoro utility
-pomodoro=$(~/.config/i3/pomodoro.sh status)
+pomodoro=$(~/.config/sway/pomodoro.sh status)
 
 # Add first task to pomodoro if working
-first_task=$(~/.config/i3/tasks.sh list-undone | head -n 1)
+first_task=$(~/.config/sway/tasks.sh list-undone | head -n 1)
 if [ "$pomodoro" = "work" ]; then
     pomodoro="work ($first_task)"
 fi
