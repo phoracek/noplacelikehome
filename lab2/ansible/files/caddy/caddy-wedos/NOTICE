@@ -75,6 +75,20 @@ Local fix in provider.go (DeleteRecords matching):
   two simultaneous _acme-challenge values (a wildcard + apex SAN). Neither
   applies to this single, non-wildcard domain. Revisit if that changes.
 
+Local fix in provider.go (trailing-dot zone in the "domain" payload):
+  libdns passes the zone in FQDN form with a trailing dot (e.g. "pacmag.cz."), but
+  WEDOS rejects that on dns-rows-list with "Invalid or unsupported domain name
+  format" (code 2202). commitDomain and toWedosDNSRecord already trimmed it, so
+  AppendRecords (presenting the TXT) worked — but GetRecords/SetRecords/DeleteRecords
+  passed the raw `zone` straight into {"domain": zone}, so every list/delete failed.
+  The practical effect: ACME *cleanup* never ran, so the DeleteRecords orphan-clearing
+  logic above was dead code, _acme-challenge TXT tokens piled up, and Let's Encrypt
+  eventually matched a stale token and returned 403 "Incorrect TXT record ... found".
+  This surfaced only when a domain was challenged more than once (e.g. a staging then
+  production attempt left two tokens); a name issued once just left one harmless
+  orphan. Added `zone = strings.TrimSuffix(zone, ".")` at the top of GetRecords,
+  SetRecords and DeleteRecords.
+
 Local fix in response.go (parseResponse):
   Upstream only returned an error on a JSON-decode failure and returned the
   envelope with no error for any WAPI result code, so a rejected request (auth
@@ -117,5 +131,6 @@ Updating
 --------
 To bump to a newer upstream, re-fetch the five client files verbatim at the new
 commit, re-apply the documented fixes (request.go hour, convert.go wedosTTL +
-SRV guard, provider.go commit + DeleteRecords, response.go error surfacing) and
-the wedos.go merge edits, and update the SHAs above.
+SRV guard, provider.go commit + DeleteRecords + trailing-dot zone trim,
+response.go error surfacing) and the wedos.go merge edits, and update the SHAs
+above.

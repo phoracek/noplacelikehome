@@ -58,6 +58,12 @@ func NewProvider(username, password string) *Provider {
 
 // GetRecords lists all the records in the zone.
 func (p *Provider) GetRecords(ctx context.Context, zone string) ([]libdns.Record, error) {
+	// libdns hands zones in FQDN form with a trailing dot (e.g. "pacmag.cz."), but
+	// WEDOS rejects that with "Invalid or unsupported domain name format" (code 2202)
+	// on dns-rows-list. Trim it, matching commitDomain and toWedosDNSRecord. Without
+	// this, every list/delete fails, so ACME cleanup never runs and orphan
+	// _acme-challenge TXT records pile up and break Let's Encrypt validation.
+	zone = strings.TrimSuffix(zone, ".")
 	payload := map[string]string{
 		"domain": zone,
 	}
@@ -131,6 +137,8 @@ func (p *Provider) AppendRecords(ctx context.Context, zone string, records []lib
 // SetRecords sets the records in the zone, either by updating existing records or creating new ones.
 // It returns the updated records.
 func (p *Provider) SetRecords(ctx context.Context, zone string, records []libdns.Record) ([]libdns.Record, error) {
+	// Trim the libdns trailing dot before it reaches WEDOS (see GetRecords).
+	zone = strings.TrimSuffix(zone, ".")
 	payload := map[string]string{
 		"domain": zone,
 	}
@@ -229,6 +237,9 @@ func (p *Provider) SetRecords(ctx context.Context, zone string, records []libdns
 
 // DeleteRecords deletes the specified records from the zone. It returns the records that were deleted.
 func (p *Provider) DeleteRecords(ctx context.Context, zone string, records []libdns.Record) ([]libdns.Record, error) {
+	// Trim the libdns trailing dot before it reaches WEDOS (see GetRecords). This is
+	// what makes the orphan-clearing delete logic below actually run.
+	zone = strings.TrimSuffix(zone, ".")
 	payload := map[string]string{
 		"domain": zone,
 	}
