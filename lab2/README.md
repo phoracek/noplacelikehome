@@ -84,6 +84,7 @@ After `deploy_services.yml` the following services are running:
 | `glances.service` | <https://glances.t470s.lab.pacmag.cz> | System monitor (internal, via Caddy; VoidAuth SSO) |
 | `dashy.service` | <https://lab.pacmag.cz> | Service dashboard (internal, via Caddy; VoidAuth SSO) |
 | `grist.service` | <https://grist.lab.pacmag.cz> | Spreadsheet / database (internal, via Caddy; OIDC login via VoidAuth) |
+| `syncthing.service` | <https://syncthing.lab.pacmag.cz> | File synchronization — GUI internal via Caddy (VoidAuth SSO); sync on host ports 22000/21027 |
 
 ### DHCP static leases
 
@@ -160,6 +161,7 @@ usefully from machines that have the static route to 192.168.88.0/24 via
 | `glances.t470s.lab.pacmag.cz` | `192.168.88.254` |
 | `lab.pacmag.cz` | `192.168.88.254` |
 | `grist.lab.pacmag.cz` | `192.168.88.254` |
+| `syncthing.lab.pacmag.cz` | `192.168.88.254` |
 
 ## Forgejo and TLS
 
@@ -447,6 +449,37 @@ session secret that signs Grist's cookies (`grist_session_secret`) is templated
 from `group_vars` into the 0600 file `/var/lib/homelab/grist/grist.env`, which the
 container reads via `EnvironmentFile` — it is never committed to the Quadlet unit.
 
+## Syncthing
+
+[Syncthing](https://syncthing.lab.pacmag.cz) is continuous file synchronization. It
+has two distinct traffic planes, handled differently:
+
+- **Web GUI / REST API (port 8384)** runs internal-only like the other apps: it
+  joins the shared private Podman network with Caddy, publishes no host port, and
+  is reachable only through Caddy on `https://syncthing.lab.pacmag.cz`. The only
+  prerequisite is the A record `syncthing.lab.pacmag.cz → 192.168.88.254` (table
+  above); access rides the existing `443` rule. The image binds the GUI to
+  `127.0.0.1` by default, so the Quadlet sets `STGUIADDRESS=0.0.0.0:8384` to make
+  it reachable from the proxy. The GUI is gated at the edge by
+  **[VoidAuth](#voidauth-single-sign-on)** via the shared `forward_auth` snippet
+  (like Glances/Dashy) — Syncthing's GUI has no per-user OIDC, and its UI exposes
+  every synced folder path and device key, so it must not sit open on the network.
+- **Sync protocol (BEP)** is raw TCP/UDP, not HTTP, so it cannot go through Caddy.
+  It is published directly on the host: **22000/tcp + 22000/udp** for
+  device-to-device transfer and **21027/udp** for LAN peer discovery — analogous to
+  Forgejo's SSH on host port 2222. Because sync never touches Caddy, the VoidAuth
+  GUI gate does not (and cannot) interfere with synchronization. To sync with
+  devices outside the lab LAN, forward host port 22000 (tcp+udp) on the router;
+  otherwise Syncthing falls back to its global relays.
+
+All state — config, the TLS device keys/ID, the index database, and the synced
+folders — lives under the single host bind mount `/var/lib/homelab/syncthing`
+(mounted at `/var/syncthing`), so it is picked up by the daily backup
+automatically. The official image runs syncthing as uid/gid 1000 (`PUID`/`PGID`),
+so the playbook owns that dir 1000:1000 or syncthing can't write its keys and
+database. No secrets are templated — the GUI is gated by VoidAuth rather than a
+committed password.
+
 ## Backups
 
 All persistent service state lives in host bind mounts under
@@ -462,8 +495,9 @@ What's captured: Caddy's issued certs and ACME state (`caddy/data`,
 `voidauth/config` — including the user/OIDC-app/ProxyAuth state and the
 `voidauth.env` storage key), Forgejo's `gitea.db` and metadata (`forgejo/gitea`),
 its git repositories (`forgejo/git`) and runtime data (`forgejo/var`), the Dashy
-config, and Grist's documents and session secret (`grist/data`, `grist/grist.env`).
-The transient Caddy build dir (`caddy/build`) is excluded — it's rebuilt from the
+config, and Grist's documents and session secret (`grist/data`, `grist/grist.env`),
+and Syncthing's config, device keys/ID, index database, and synced folders
+(`syncthing/`). The transient Caddy build dir (`caddy/build`) is excluded — it's rebuilt from the
 repo on every `deploy_services_caddy.yml` run, and Glances has no persistent state.
 The backup destination is mode `0700` because the archives contain those 0600
 secrets.

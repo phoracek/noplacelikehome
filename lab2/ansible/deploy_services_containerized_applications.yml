@@ -14,6 +14,7 @@
       - dashy
       - grist
       - voidauth
+      - syncthing
   tasks:
     # Forgejo runs as USER_UID/USER_GID 1000 inside the container, so its
     # bind-mounted data dirs must be owned by uid/gid 1000 on the host (rootful
@@ -106,6 +107,21 @@
         group: root
         mode: "0600"
       notify: Restart voidauth
+
+    # Syncthing stores its config, TLS device keys, index database, and the default
+    # synced folders under the single bind-mounted /var/syncthing tree. Podman won't
+    # create the bind-mount source, and the image runs syncthing as uid/gid 1000
+    # after dropping from root, so the host dir must exist owned by 1000:1000
+    # (rootful Podman maps container uid 1000 to host uid 1000) or syncthing can't
+    # write its keys/database. Syncthing needs no committed secrets, so there's no
+    # env file to template (the GUI is gated by VoidAuth at the edge).
+    - name: Ensure Syncthing data directory exists (owned by the syncthing uid)
+      ansible.builtin.file:
+        path: /var/lib/homelab/syncthing
+        state: directory
+        owner: "1000"
+        group: "1000"
+        mode: "0755"
 
     # Each Forgejo Actions runner bind-mounts /var/lib/homelab/<name> at /data
     # (its config.yml, action cache, workflow workdirs). Podman won't create the

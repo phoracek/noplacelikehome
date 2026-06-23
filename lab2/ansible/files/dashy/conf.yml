@@ -16,6 +16,15 @@ sections:
   - name: Services
     icon: fas fa-server
     items:
+      # VoidAuth is the SSO provider that gates the other tiles; listed first.
+      # It isn't in the homelab-svg-assets set (hl-) the other tiles use, so point
+      # at its own logo on the jsdelivr CDN by full URL, like Grist.
+      - title: VoidAuth
+        description: Single sign-on / auth provider
+        icon: https://cdn.jsdelivr.net/gh/voidauth/voidauth@main/frontend/public/logo.svg
+        url: https://auth.lab.pacmag.cz
+        target: newtab
+
       - title: Forgejo
         description: Self-hosted Git forge
         icon: hl-forgejo
@@ -35,4 +44,10 @@ sections:
         description: Spreadsheet / database
         icon: https://cdn.jsdelivr.net/gh/walkxcode/dashboard-icons/svg/grist.svg
         url: https://grist.lab.pacmag.cz
+        target: newtab
+
+      - title: Syncthing
+        description: Continuous file synchronization
+        icon: hl-syncthing
+        url: https://syncthing.lab.pacmag.cz
         target: newtab

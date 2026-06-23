@@ -91,6 +91,18 @@ grist.lab.pacmag.cz {
 	reverse_proxy grist:8484
 }
 
+syncthing.lab.pacmag.cz {
+	import wedos_tls
+	# This vhost is ONLY the Syncthing web GUI / REST API (port 8384). Syncthing has
+	# an optional GUI login of its own, but we gate at the edge with VoidAuth SSO for
+	# consistency with the other admin UIs (Glances/Dashy) — the GUI exposes every
+	# synced folder path and device key, so it must not sit open on the network.
+	# Sync traffic (port 22000) bypasses Caddy entirely via published host ports, so
+	# this forward_auth gate does not — and cannot — interfere with synchronization.
+	import voidauth
+	reverse_proxy syncthing:8384
+}
+
 ramus-mcp.lab.pacmag.cz {
 	import wedos_tls
 
