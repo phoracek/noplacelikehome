@@ -111,21 +111,21 @@ ramus-mcp.lab.pacmag.cz {
 	@maint path /reopen /probe-reset
 	respond @maint 403
 
-	# Deny by default: require HTTP basic auth on every path EXCEPT the
-	# token-authenticated data plane (creds templated by Ansible from the
-	# gitignored group_vars, same as the Glances ones). A new server route that
-	# mints a lock token therefore fails CLOSED — it's covered by @protected
-	# automatically — rather than slipping through an allowlist nobody updated.
+	# Gate ONLY the token-minting route (creds templated by Ansible from the
+	# gitignored group_vars, same as the Glances ones). Every other route is
+	# either capability-URL-protected — the upload/stream/socket endpoints
+	# (/flash/<id>, /attach/<id>, /midi/<id>) and the one-time recording
+	# downloads (/audio/<id>, deleted on read) carry their own unguessable lock
+	# token as the credential — or deliberately open: the MCP transport (/sse,
+	# /messages/), which Claude Code cannot send basic auth on, and the read-only
+	# redacted diagnostics (/api/v1/logs, /api/v1/diagnose) that are needed
+	# exactly when things break. See tools/agentic/hardware/mcp-server/README.md.
 	#
-	# The exempt data plane is the set of routes whose own one-time lock token IS
-	# the credential: the upload/stream/socket endpoints (/flash/<id>, /attach/<id>,
-	# /midi/<id>), the one-time recording downloads (/audio/<id>, deleted on read),
-	# the token-gated prepare_* + record + unlock REST calls (every /api/v1/*
-	# except the token-minting /api/v1/lock), and the unauthenticated health check.
-	# Everything else — /sse, /messages, /api/v1/lock, and any future route —
-	# requires basic auth.
-	@protected not path /flash/* /attach/* /midi/* /audio/* /api/v1/ping /api/v1/unlock /api/v1/prepare-* /api/v1/record
-	basic_auth @protected {
+	# Keep this matcher in sync with the server's route table: any new route that
+	# mints or leaks a lock token must be added here, or it is reachable without
+	# credentials.
+	@mint path /api/v1/lock
+	basic_auth @mint {
 		{$RAMUS_MCP_BASIC_AUTH_USER} {$RAMUS_MCP_BASIC_AUTH_PASSWORD_HASH}
 	}
 
