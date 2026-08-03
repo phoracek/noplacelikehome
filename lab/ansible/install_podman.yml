@@ -12,8 +12,8 @@
       # nss-mdns is what lets the host's own libc resolve home.local
       # back to itself. avahi alone only *advertises* the name to the
       # LAN — without nss-mdns the host can't resolve its own .local
-      # name, so Forgejo Actions image pulls (which go through the
-      # host's Podman daemon) fail with "no such host".
+      # name, so anything on the host that dials a service by that name
+      # fails with "no such host".
       ansible.builtin.dnf:
         name:
           - podman
@@ -23,7 +23,7 @@
           - chrony
         state: present
 
-    - name: Enable chronyd (Joplin Server rejects host clock drift > 2s)
+    - name: Enable chronyd (keeps the host clock in sync)
       ansible.builtin.systemd_service:
         name: chronyd.service
         state: started
@@ -50,71 +50,6 @@
         state: started
         enabled: true
 
-    - name: Create podman-users group (fixed GID for socket access by forgejo-runner)
-      ansible.builtin.group:
-        name: podman-users
-        gid: 980
-        system: true
-        state: present
-
-    - name: Ensure podman.socket drop-in directory exists
-      ansible.builtin.file:
-        path: /etc/systemd/system/podman.socket.d
-        state: directory
-        owner: root
-        group: root
-        mode: "0755"
-
-    - name: Drop-in to gate podman.socket behind the podman-users group
-      # The runner container runs as a non-root user but needs to reach
-      # the rootful Podman socket. Default ownership is root:root 0660,
-      # so we move the group to podman-users (GID 980) and the runner
-      # Quadlet picks that GID up via GroupAdd=980. The socket stays
-      # unreadable to everyone else on the host.
-      ansible.builtin.copy:
-        dest: /etc/systemd/system/podman.socket.d/override.conf
-        content: |
-          [Socket]
-          SocketMode=0660
-          SocketGroup=podman-users
-        owner: root
-        group: root
-        mode: "0644"
-      register: podman_socket_override
-
-    - name: Reload systemd if podman.socket drop-in changed
-      ansible.builtin.systemd_service:
-        daemon_reload: true
-      when: podman_socket_override.changed
-
-    - name: Restart podman.socket if its drop-in changed
-      ansible.builtin.systemd_service:
-        name: podman.socket
-        state: restarted
-      when: podman_socket_override.changed
-
-    - name: Enable the rootful Podman API socket (used by forgejo-runner)
-      ansible.builtin.systemd_service:
-        name: podman.socket
-        state: started
-        enabled: true
-
-    - name: Trust the Forgejo container registry as insecure (plain HTTP)
-      # Forgejo's container registry is served over the same plain-HTTP
-      # listener as the web UI (http://home.local:8128). Without this
-      # drop-in, the host's Podman refuses to push/pull from it, which
-      # in turn breaks any Forgejo Actions workflow that builds an image
-      # and pushes via the mounted host socket.
-      ansible.builtin.copy:
-        dest: /etc/containers/registries.conf.d/home-local.conf
-        content: |
-          [[registry]]
-          location = "home.local:8128"
-          insecure = true
-        owner: root
-        group: root
-        mode: "0644"
-
     - name: Create homelab data directories
       ansible.builtin.file:
         path: "{{ item }}"
@@ -132,23 +67,6 @@
         - /var/lib/homelab/mosquitto/config
         - /var/lib/homelab/mosquitto/data
         - /var/lib/homelab/mosquitto/log
-        - /var/lib/homelab/joplin
-        - /var/lib/homelab/forgejo
-        - /var/lib/homelab/forgejo/gitea
-        - /var/lib/homelab/forgejo/git
-        - /var/lib/homelab/forgejo/var
-        - /var/lib/homelab/pages
-
-    - name: Create per-runner data directories
-      ansible.builtin.file:
-        path: "/var/lib/homelab/{{ item.name }}"
-        state: directory
-        owner: root
-        group: root
-        mode: "0755"
-      loop: "{{ forgejo_runners | default([]) }}"
-      loop_control:
-        label: "{{ item.name }}"
 
     - name: Install Dashy configuration
       ansible.builtin.copy:
@@ -180,68 +98,6 @@
         - /var/lib/homelab/mosquitto/data
         - /var/lib/homelab/mosquitto/log
       notify: Restart mosquitto
-
-    - name: Own joplin data dir to the in-container joplin user (UID 1001)
-      # joplin/server is based on node:24-slim, which ships with a `node`
-      # user at UID 1000. The image then `useradd`s `joplin` without -u,
-      # so the joplin process runs as UID 1001, not 1000.
-      ansible.builtin.file:
-        path: /var/lib/homelab/joplin
-        state: directory
-        owner: "1001"
-        group: "1001"
-        mode: "0755"
-        recurse: true
-      notify: Restart joplin-server
-
-    - name: Own forgejo data dirs to the in-container git user (UID 1000)
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: directory
-        owner: "1000"
-        group: "1000"
-        mode: "0755"
-        recurse: true
-      loop:
-        - /var/lib/homelab/forgejo/gitea
-        - /var/lib/homelab/forgejo/git
-        - /var/lib/homelab/forgejo/var
-      notify: Restart forgejo
-
-    - name: Own per-runner data dirs to the in-container runner user (UID 1000)
-      # The runner needs to write under /data (its action cache, workflow
-      # workdirs, etc.). The mount source on the host is owned root:root
-      # 0755 by the create-dirs loop above, so the in-container UID 1000
-      # user can't mkdir there. Non-recursive on purpose — once the cache
-      # is populated by the runner itself (as UID 1000), Ansible doesn't
-      # need to re-touch it on every play.
-      ansible.builtin.file:
-        path: "/var/lib/homelab/{{ item.name }}"
-        state: directory
-        owner: "1000"
-        group: "1000"
-        mode: "0755"
-      loop: "{{ forgejo_runners | default([]) }}"
-      loop_control:
-        label: "{{ item.name }}"
-      notify: Restart forgejo runners
-
-    - name: Install per-runner config.yml (entries with placeholder credentials are skipped)
-      ansible.builtin.template:
-        src: templates/forgejo-runner/config.yml.j2
-        dest: "/var/lib/homelab/{{ runner.name }}/config.yml"
-        owner: "1000"
-        group: "1000"
-        mode: "0600"
-      loop: "{{ forgejo_runners | default([]) }}"
-      loop_control:
-        loop_var: runner
-        label: "{{ runner.name }}"
-      when:
-        - runner.uuid != "PASTE_UUID_HERE"
-        - runner.token != "PASTE_TOKEN_HERE"
-      no_log: true
-      notify: Restart forgejo runners
 
     - name: Seed Zigbee2MQTT configuration (skips the v2 onboarding wizard)
       ansible.builtin.copy:
@@ -287,11 +143,7 @@
         - 8123/tcp
         - 8124/tcp
         - 8125/tcp
-        - 8127/tcp
-        - 22300/tcp
         - 61208/tcp
-        - 8128/tcp
-        - 8129/tcp
 
     - name: Allow mDNS through firewalld so home.local resolves on the LAN
       ansible.posix.firewalld:
@@ -317,30 +169,4 @@
       ansible.builtin.systemd_service:
         name: zigbee2mqtt.service
         state: restarted
-      failed_when: false
-
-    - name: Restart joplin-server
-      ansible.builtin.systemd_service:
-        name: joplin-server.service
-        state: restarted
-      failed_when: false
-
-    - name: Restart forgejo
-      ansible.builtin.systemd_service:
-        name: forgejo.service
-        state: restarted
-      failed_when: false
-
-    - name: Restart forgejo runners
-      # One handler that loops over every configured runner. Handlers
-      # fire at most once per play regardless of how many notify lines
-      # triggered them, so we can't dispatch per-runner here — restart
-      # all of them. They're idempotent and re-register on start, so
-      # the wasted churn is harmless.
-      ansible.builtin.systemd_service:
-        name: "{{ item.name }}.service"
-        state: restarted
-      loop: "{{ forgejo_runners | default([]) }}"
-      loop_control:
-        label: "{{ item.name }}"
       failed_when: false

@@ -44,27 +44,6 @@ sections:
         target: newtab
         statusCheckUrl: http://home.local:61208
 
-      - title: PairDrop
-        description: LAN file drop
-        icon: fas fa-share-square
-        url: http://home.local:8127
-        target: newtab
-        statusCheckUrl: http://home.local:8127
-
-      - title: Joplin
-        description: Notes sync
-        icon: fas fa-book
-        url: http://home.local:22300
-        target: newtab
-        statusCheckUrl: http://home.local:22300/api/ping
-
-      - title: Forgejo
-        description: Self-hosted Git
-        icon: fas fa-code-branch
-        url: http://home.local:8128
-        target: newtab
-        statusCheckUrl: http://home.local:8128/api/v1/version
-
       - title: Router
         description: Home router (kabelbox)
         icon: fas fa-network-wired

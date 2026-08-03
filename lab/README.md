@@ -1,10 +1,9 @@
 # Dell
 
 A small AlmaLinux 9 host running Home Assistant, Mosquitto, Zigbee2MQTT,
-Dashy, Clouds over Czechoslovakia, Glances, PairDrop, Joplin Server,
-Forgejo, and a Forgejo Actions runner as Podman containers managed by
-systemd via Quadlet. Ansible bootstraps the host; everything else is a
-`.container` unit deployed from this repo.
+Dashy, Clouds over Czechoslovakia, and Glances as Podman containers
+managed by systemd via Quadlet. Ansible bootstraps the host; everything
+else is a `.container` unit deployed from this repo.
 
 ## Bring-up
 
@@ -38,11 +37,6 @@ After `deploy_containers.yml`, the following systemd services are running on the
 | `clouds-over-czechoslovakia-server.service` | <http://home.local:8125> | Clouds over Czechoslovakia (artifacts served by nginx) |
 | `clouds-over-czechoslovakia.timer` | (every 10 min) | Regenerates the artifacts via the upstream image |
 | `glances.service`       | <http://home.local:61208> | Host metrics |
-| `pairdrop.service`      | <http://home.local:8127> | LAN file drop (AirDrop-style) |
-| `joplin-server.service` | <http://home.local:22300> | Joplin Server (notes sync) |
-| `forgejo.service`       | <http://home.local:8128> | Forgejo Git service |
-| `forgejo-runner-1.service`, `forgejo-runner-2.service` | (workers, no UI) | Forgejo Actions runners — one systemd unit per entry in `forgejo_runners` |
-| `pages.service`         | <http://home.local:8129> | Static-site hosting (published by Forgejo Actions) |
 | `mosquitto.service`     | `127.0.0.1:1883` (host-local) | MQTT broker |
 
 The host advertises itself as `home.local` over mDNS via `avahi-daemon`,
@@ -50,9 +44,9 @@ so any LAN client with an mDNS resolver (Linux with `nss-mdns`, macOS,
 Windows, Android, iOS) can reach the services by name. Falls back to
 the host's IP if mDNS is unavailable. The host itself also runs
 `nss-mdns` (pulled in from EPEL by `install_podman.yml`) so its own
-libc resolves `home.local` back to itself — the Forgejo Actions runner
-asks the host's Podman daemon to pull job-container images by name,
-and that lookup would otherwise hit the LAN DNS server and fail.
+libc resolves `home.local` back to itself — otherwise anything on the
+host that dials a service by that name hits the LAN DNS server and
+fails.
 
 ## First-time configuration
 
@@ -64,55 +58,12 @@ and that lookup would otherwise hit the LAN DNS server and fail.
    credentials. (Use the IPv4 literal — `localhost` resolves to `::1` first
    and Mosquitto only listens on IPv4 loopback.) Z2M's MQTT discovery will
    then publish all paired devices into HA automatically.
-4. Open <http://home.local:22300> and log in as `admin@localhost` /
-   `admin`. Change the admin email and password, then create a regular user
-   for sync. In each Joplin client: Tools → Options → Synchronisation →
-   "Joplin Server (beta)" with URL `http://home.local:22300` and that user's
-   credentials.
-5. Open <http://home.local:8128>. The Forgejo install wizard appears with
-   the values from the Quadlet unit pre-filled — submit it. Register the
-   first account; it becomes site admin. See [Forgejo → Disable open
-   registration](#disable-open-registration) for closing sign-ups
-   afterwards.
-6. Register a Forgejo Actions runner. Forgejo 15 / Runner 12 uses a
-   YAML config file with persistent connection credentials. All host-side
-   steps go through Ansible — no manual editing on the server.
-
-   a. In Forgejo: Site Administration → Actions → Runners → "Create new
-      runner". The page shows a UUID and a token (token is one-time
-      view — copy both).
-   b. On your workstation, create the secrets file from the example and
-      paste the values:
-
-      ```sh
-      cp ansible/group_vars/server.yml.example ansible/group_vars/server.yml
-      $EDITOR ansible/group_vars/server.yml
-      ```
-
-      `ansible/group_vars/server.yml` is gitignored — the token never
-      enters the repo.
-   c. Re-run the playbooks. `install_podman.yml` templates one
-      `/var/lib/homelab/<name>/config.yml` per entry in
-      `forgejo_runners`; `deploy_containers.yml` renders one Quadlet
-      per entry and starts each runner once its credentials are real:
-
-      ```sh
-      ansible-playbook -i inventory.file -u ansible install_podman.yml
-      ansible-playbook -i inventory.file -u ansible deploy_containers.yml
-      ```
-
-      The Quadlet's `WantedBy=` handles auto-start at boot;
-      `systemctl enable` doesn't work on Quadlet-generated transient
-      units.
-
-   Adding more runners later: see [Adding another
-   runner](#adding-another-runner) below.
 
 ## Operating the stack
 
 ```sh
 # Status
-sudo systemctl status dashy homeassistant mosquitto zigbee2mqtt clouds-over-czechoslovakia-server glances pairdrop joplin-server forgejo 'forgejo-runner-*' pages
+sudo systemctl status dashy homeassistant mosquitto zigbee2mqtt clouds-over-czechoslovakia-server glances
 sudo systemctl list-timers clouds-over-czechoslovakia.timer
 
 # Logs
@@ -128,268 +79,6 @@ sudo systemctl start podman-auto-update.service
 
 All persistent state lives under `/var/lib/homelab/`; back up that directory
 to capture every service's state in one go.
-
-## Forgejo
-
-Self-hosted Git on <http://home.local:8128>, backed by SQLite, with one
-Forgejo Actions runner picking up CI jobs locally via the host's rootful
-Podman socket.
-
-### Storage layout
-
-Everything Forgejo writes lives under `/var/lib/homelab/forgejo/`,
-mounted into the container at three points:
-
-| Host path | In-container path | What's in it |
-|-----------|------------------|--------------|
-| `forgejo/gitea` | `/data/gitea`     | `app.ini`, sqlite DB |
-| `forgejo/git`   | `/data/git`       | bare repos + LFS objects |
-| `forgejo/var`   | `/var/lib/gitea`  | runtime work dir (`GITEA_WORK_DIR`) |
-
-Each runner's persistent state (`config.yml` + workdir/cache) lives at
-`/var/lib/homelab/<runner-name>/` — one directory per entry in
-`forgejo_runners`. Backing up `/var/lib/homelab/` captures the full
-server + every runner's state.
-
-### Runner ↔ host Podman: how it's wired
-
-The runner has to talk to the host's Podman daemon so it can spawn job
-containers as siblings. Three pieces make that work without disabling
-any security layer:
-
-1. **DAC** — `install_podman.yml` creates a system group
-   `podman-users` (GID 980) and drops in
-   `/etc/systemd/system/podman.socket.d/override.conf` setting
-   `SocketMode=0660 + SocketGroup=podman-users`. The socket is no longer
-   world-accessible. The runner Quadlet has `GroupAdd=980` so the
-   in-container user is a supplementary member of that group.
-2. **MAC** — the runner Quadlet sets
-   `SecurityLabelType=container_runtime_t`. The Podman socket is
-   labeled `container_var_run_t`, which the default `container_t`
-   container domain is forbidden from touching. `container_runtime_t`
-   is the domain Podman itself runs in and is permitted to access the
-   socket. SELinux stays enforcing for every other container on the
-   host.
-3. **No-op for everyone else** — only the runner Quadlets (rendered
-   from `ansible/templates/forgejo-runner/runner.container.j2`) carry
-   `GroupAdd=` and `SecurityLabelType=`. Every other Quadlet keeps the
-   default `container_t` and has no socket access.
-
-`sudo podman inspect <runner-name> --format '{{.ProcessLabel}}'` should
-report `…:container_runtime_t:s0:c…` to confirm the type is applied.
-
-### Daily ops
-
-```sh
-# Runner status (one service per entry in forgejo_runners)
-sudo systemctl status 'forgejo-runner-*'
-sudo journalctl -u forgejo-runner-1 -f  # or -u forgejo-runner-2, etc.
-
-# What the runner sees on the host while a job runs
-sudo podman ps --filter name=ACT_       # job containers (sibling to runner)
-sudo podman logs <container> -f         # tail a job
-
-# Forgejo server logs
-sudo journalctl -u forgejo -f
-```
-
-The admin Actions page (<http://home.local:8128/-/admin/actions/runners>)
-shows the runner's `Idle`/`Active` status and timestamps of its last
-contact.
-
-### Running CI on a repo
-
-Drop a workflow at `.forgejo/workflows/<name>.yml` in any repo. Minimal
-example that runs `make check` in the runner-default `node:20-bookworm`
-image (which has `make` and a Debian userspace):
-
-```yaml
-name: check
-
-on:
-  push:
-  pull_request:
-
-jobs:
-  check:
-    runs-on: docker
-    steps:
-      - uses: actions/checkout@v4
-      - run: make check
-```
-
-`runs-on: docker` matches the label the runner registers with
-(`docker:docker://node:20-bookworm` — set in
-`ansible/templates/forgejo-runner/config.yml.j2`). `actions/checkout@v4`
-is resolved via `FORGEJO__actions__DEFAULT_ACTIONS_URL=https://code.forgejo.org`,
-which mirrors the common actions.
-
-### Container registry
-
-Forgejo's built-in OCI registry is served on the same listener as the
-web UI: `home.local:8128`. No Quadlet env to flip — packages are enabled
-by default and land on the existing `forgejo/gitea` volume under
-`/data/gitea/packages`. Per-repo images appear in the repo's **Packages**
-tab.
-
-Because the listener is plain HTTP, the host's Podman has to be told to
-trust `home.local:8128` as insecure — `install_podman.yml` drops
-`/etc/containers/registries.conf.d/home-local.conf` for exactly that.
-Without it, the runner can't push (it builds via the mounted host
-socket, so it's the host's Podman doing the talking), and `podman pull`
-on the host or any other LAN machine also refuses.
-
-Push from a workflow:
-
-```yaml
-name: image
-
-on:
-  push:
-
-jobs:
-  build:
-    runs-on: docker
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/login-action@v3
-        with:
-          registry: home.local:8128
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/build-push-action@v6
-        with:
-          push: true
-          tags: home.local:8128/${{ github.repository }}:${{ github.sha }}
-```
-
-`${{ secrets.GITHUB_TOKEN }}` is a Forgejo-issued, per-job token with
-write access to the current repo's packages — the variable name is kept
-verbatim for GitHub Actions compatibility (Forgejo Actions also exposes
-the same value as `${{ secrets.FORGEJO_TOKEN }}` if the GitHub naming
-grates).
-
-Pull from any host on the LAN:
-
-```sh
-podman pull home.local:8128/<owner>/<repo>:<tag>
-```
-
-The pulling host needs the same `insecure = true` entry in its own
-`/etc/containers/registries.conf.d/` (the Dell already has it).
-
-### Pages
-
-There's no first-class Forgejo Pages, so the host runs a thin nginx
-Quadlet (`pages.service`) that serves `/var/lib/homelab/pages/`
-read-only at <http://home.local:8129>. Anything an Actions workflow
-writes under `/var/lib/homelab/pages/<owner>/<repo>/` then resolves at
-`http://home.local:8129/<owner>/<repo>/`. No auth, no TLS — homelab
-artifact bucket, not a public Pages clone.
-
-The runner Quadlet bind-mounts that directory into every job container
-at `/pages` (via `--volume=…:/pages:z` in
-`ansible/templates/forgejo-runner/config.yml.j2`), so the publish step
-needs no `podman run`, no docker socket — just `cp`. Minimal Hugo
-example:
-
-```yaml
-name: pages
-
-on:
-  push:
-    branches: [main]
-
-jobs:
-  build:
-    runs-on: docker
-    container: docker.io/library/hugo-extended:latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - run: hugo --baseURL "http://home.local:8129/${{ github.repository }}/"
-      - run: |
-          mkdir -p "/pages/${{ github.repository }}"
-          rm -rf "/pages/${{ github.repository }}"/*
-          cp -r public/. "/pages/${{ github.repository }}/"
-```
-
-Trade-off vs github.com / codeberg.page Pages: it's path-prefixed
-(`/<owner>/<repo>/…`), not subdomain-rooted, so any static-site
-generator needs to know the prefix — Hugo `--baseURL`, Jekyll
-`baseurl`, Vite `base`, Next.js `basePath`, etc. Absolute paths in the
-generated HTML (`<link href="/style.css">`) break without it.
-
-### Opening a PR via the API
-
-Generate a token in User Settings → Applications (scope: at least
-`write:repository`) and POST to the Gitea-compatible REST API:
-
-```sh
-curl -sS -X POST \
-  -H "Authorization: token $TOKEN" \
-  -H "Content-Type: application/json" \
-  http://home.local:8128/api/v1/repos/<owner>/<repo>/pulls \
-  -d '{"title":"…","body":"…","head":"feature-branch","base":"main"}'
-```
-
-The `tea` CLI (`tea login add --url http://home.local:8128 --token …`)
-wraps the same API for scripting (`tea pr create`, `tea pr merge`, …).
-
-### Disable open registration
-
-After the first user is created via the install wizard (they become
-site admin), edit `app.ini` on the host:
-
-```sh
-# Path is whatever the wizard reported on its final screen — usually:
-sudo $EDITOR /var/lib/homelab/forgejo/gitea/conf/app.ini
-# Add or set under [service]:
-#   DISABLE_REGISTRATION = true
-sudo systemctl restart forgejo
-```
-
-### Adding another runner
-
-Runner config is driven by a `forgejo_runners` list of dicts in
-`ansible/group_vars/server.yml` — one entry per runner, looped over by
-both plays. To add another runner:
-
-1. In Forgejo: Site Administration → Actions → Runners → "Create new
-   runner". Copy the UUID and token (the token is shown only once).
-2. Append an entry to `forgejo_runners` in `group_vars/server.yml`:
-
-   ```yaml
-   forgejo_runners:
-     - name: forgejo-runner-1
-       uuid: "…"
-       token: "…"
-     - name: forgejo-runner-2
-       uuid: "…"
-       token: "…"
-     - name: forgejo-runner-3   # new entry
-       uuid: "…"
-       token: "…"
-   ```
-
-   The `name` becomes the systemd unit (`<name>.service`), the
-   container name, and the on-disk data dir
-   (`/var/lib/homelab/<name>/`). Pick something stable — renaming
-   orphans the existing state directory and forces re-registration.
-3. Re-run the playbooks:
-
-   ```sh
-   ansible-playbook -i inventory.file -u ansible install_podman.yml
-   ansible-playbook -i inventory.file -u ansible deploy_containers.yml
-   ```
-
-`install_podman.yml` creates and chowns the new data dir and templates
-its `config.yml`; `deploy_containers.yml` renders the Quadlet from
-`ansible/templates/forgejo-runner/runner.container.j2` and starts the
-service. Entries still carrying the example file's `PASTE_*_HERE`
-placeholders are skipped, so you can stage a slot before cutting the
-token in Forgejo.
 
 ## Home assistant
 
