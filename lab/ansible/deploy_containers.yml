@@ -11,15 +11,11 @@
       - homeassistant
       - clouds-over-czechoslovakia
       - clouds-over-czechoslovakia-server
-      - dashy
-      - glances
     long_running_units:
       - mosquitto
       - zigbee2mqtt
       - homeassistant
       - clouds-over-czechoslovakia-server
-      - dashy
-      - glances
     systemd_timers:
       - clouds-over-czechoslovakia
   tasks:

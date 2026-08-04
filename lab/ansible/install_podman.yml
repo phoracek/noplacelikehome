@@ -62,20 +62,10 @@
         - /var/lib/homelab/homeassistant
         - /var/lib/homelab/zigbee2mqtt
         - /var/lib/homelab/clouds-over-czechoslovakia
-        - /var/lib/homelab/dashy
         - /var/lib/homelab/mosquitto
         - /var/lib/homelab/mosquitto/config
         - /var/lib/homelab/mosquitto/data
         - /var/lib/homelab/mosquitto/log
-
-    - name: Install Dashy configuration
-      ansible.builtin.copy:
-        src: files/dashy/conf.yml
-        dest: /var/lib/homelab/dashy/conf.yml
-        owner: root
-        group: root
-        mode: "0644"
-      notify: Restart dashy
 
     - name: Install mosquitto configuration
       ansible.builtin.copy:
@@ -133,17 +123,18 @@
         enabled: true
 
     - name: Open firewall ports for the homelab services
+      # 80/tcp and 443/tcp are absent on purpose: nothing here binds them, and
+      # they belong to the lab3 Caddy ingress on this same host, whose own
+      # playbook opens them.
       ansible.posix.firewalld:
         port: "{{ item }}"
         permanent: true
         immediate: true
         state: enabled
       loop:
-        - 80/tcp
         - 8123/tcp
         - 8124/tcp
         - 8125/tcp
-        - 61208/tcp
 
     - name: Allow mDNS through firewalld so home.local resolves on the LAN
       ansible.posix.firewalld:
@@ -153,12 +144,6 @@
         state: enabled
 
   handlers:
-    - name: Restart dashy
-      ansible.builtin.systemd_service:
-        name: dashy.service
-        state: restarted
-      failed_when: false
-
     - name: Restart mosquitto
       ansible.builtin.systemd_service:
         name: mosquitto.service

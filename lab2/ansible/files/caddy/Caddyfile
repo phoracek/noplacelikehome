@@ -30,78 +30,10 @@ http://t470s.lab.pacmag.cz {
 	}
 }
 
-# Shared edge auth for the services with no login of their own (Glances and
-# Dashy). Caddy clones each request to VoidAuth's
-# forward-auth endpoint (the voidauth container on the shared network); VoidAuth
-# checks the x-voidauth-session cookie against its ProxyAuth Domain rules and
-# returns 2xx to allow or a redirect to its login page to deny. On success the
-# Remote-* identity headers are copied onto the request for any downstream app
-# that supports trusted-header SSO. VoidAuth itself (auth.lab.pacmag.cz) is the
-# one site NOT wrapped in this — it is the login portal.
-(voidauth) {
-	forward_auth voidauth:3000 {
-		uri /api/authz/forward-auth
-		copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
-	}
-}
-
-forge.lab.pacmag.cz {
-	import wedos_tls
-	# Forgejo is NOT placed behind forward_auth: the CI runners, git-over-HTTPS,
-	# and the API all reach this same vhost and authenticate with tokens, which
-	# carry no VoidAuth session cookie — a proxy gate would 302-redirect and break
-	# them. Forgejo instead uses VoidAuth as an OIDC login source (configured in
-	# its admin UI), so SSO covers the web UI while tokens keep working.
-	reverse_proxy forgejo:3000
-}
-
-# VoidAuth — the SSO/auth provider and login portal. Plain reverse proxy: this is
-# the one internal site that must stay reachable without auth, since it's what the
-# forward_auth gates above and Forgejo's OIDC flow redirect users to.
-auth.lab.pacmag.cz {
-	import wedos_tls
-	reverse_proxy voidauth:3000
-}
-
-glances.t470s.lab.pacmag.cz {
-	import wedos_tls
-	# Glances' web UI has no authentication of its own and, because the container
-	# runs with --pid=host, exposes every host process's full command line (which
-	# routinely leaks secrets passed as CLI args). Gate it at the edge with
-	# VoidAuth SSO.
-	import voidauth
-	reverse_proxy glances:61208
-}
-
-lab.pacmag.cz {
-	import wedos_tls
-	# Dashy has no login of its own; gate it at the edge with VoidAuth SSO.
-	import voidauth
-	reverse_proxy dashy:8080
-}
-
-grist.lab.pacmag.cz {
-	import wedos_tls
-	# Unlike Glances/Dashy, Grist is NOT placed behind the forward_auth gate: it
-	# authenticates users itself via OIDC against VoidAuth (per-user accounts) and
-	# must receive the OIDC callback at /oauth2/callback, so Caddy just proxies it.
-	# GRIST_FORCE_LOGIN means anonymous browser hits are redirected to the OIDC
-	# login by Grist; API clients' `Authorization: Bearer <api-key>` is validated by
-	# Grist directly. reverse_proxy upgrades Grist's WebSockets automatically.
-	reverse_proxy grist:8484
-}
-
-syncthing.lab.pacmag.cz {
-	import wedos_tls
-	# This vhost is ONLY the Syncthing web GUI / REST API (port 8384). Syncthing has
-	# an optional GUI login of its own, but we gate at the edge with VoidAuth SSO for
-	# consistency with the other admin UIs (Glances/Dashy) — the GUI exposes every
-	# synced folder path and device key, so it must not sit open on the network.
-	# Sync traffic (port 22000) bypasses Caddy entirely via published host ports, so
-	# this forward_auth gate does not — and cannot — interfere with synchronization.
-	import voidauth
-	reverse_proxy syncthing:8384
-}
+# ramus-mcp.lab.pacmag.cz is the only *.lab.pacmag.cz name served from this host;
+# the rest are served by ../lab3. Never add a vhost here for a name lab3 also
+# serves: both hosts would renew the same certificate and collide on the single
+# shared _acme-challenge TXT record.
 
 ramus-mcp.lab.pacmag.cz {
 	import wedos_tls
@@ -112,7 +44,7 @@ ramus-mcp.lab.pacmag.cz {
 	respond @maint 403
 
 	# Gate ONLY the token-minting route (creds templated by Ansible from the
-	# gitignored group_vars, same as the Glances ones). Every other route is
+	# gitignored group_vars). Every other route is
 	# either capability-URL-protected — the upload/stream/socket endpoints
 	# (/flash/<id>, /attach/<id>, /midi/<id>) and the one-time recording
 	# downloads (/audio/<id>, deleted on read) carry their own unguessable lock

@@ -7,8 +7,8 @@ Wants=network-online.target
 Image=docker.io/nicolargo/glances:latest
 ContainerName=glances
 # Web UI is internal-only: it joins the shared network with Caddy and publishes
-# no host port, reachable only via Caddy at https://glances.t470s.lab.pacmag.cz.
-Network=forgejo.network
+# no host port, reachable only via Caddy at https://glances.lab.pacmag.cz.
+Network=homelab.network
 # Run Glances in web-server mode (listens on 61208 inside the container).
 Environment=GLANCES_OPT=-w
 Environment=TZ=Europe/Prague

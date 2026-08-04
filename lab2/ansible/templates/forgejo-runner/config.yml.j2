@@ -13,11 +13,6 @@ runner:
     - docker:docker://node:20-bookworm
     - ubuntu-latest:docker://node:20-bookworm
 
-# Passed to `docker run` when the runner spawns a job container as a
-# sibling. The runner itself has AddHost=forge.lab.pacmag.cz:host-gateway in
-# its Quadlet, but that doesn't propagate — job containers need their own
-# /etc/hosts entry, otherwise actions/checkout@v4 can't resolve the Forgejo
-# server URL configured above (the web UI is published only via Caddy on the
-# host, reached here through the host gateway).
-container:
-  options: "--add-host=forge.lab.pacmag.cz:host-gateway"
+# No `container.options` block: the forge runs on another host and its name
+# resolves through ordinary DNS, so job containers need no /etc/hosts pin to
+# reach the server URL above or to pull from its registry.

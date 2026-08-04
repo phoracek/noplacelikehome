@@ -1,6 +1,8 @@
 [Unit]
 Description=Forgejo Actions runner ({{ runner.name }})
-After=network-online.target forgejo.service podman.socket
+# No ordering against the forge: it runs on another host, and the runner retries
+# its connection until the forge answers.
+After=network-online.target podman.socket
 Wants=network-online.target
 Requires=podman.socket
 
@@ -27,11 +29,9 @@ GroupAdd=980
 # containers via the runtime socket). Other containers on the host
 # continue to run in container_t.
 SecurityLabelType=container_runtime_t
-# Forgejo's web UI publishes no host port — it's reached only through Caddy
-# at https://forge.lab.pacmag.cz. Map that name to the host gateway so the
-# runner resolves it to the host, where Caddy serves 443 and reverse-proxies
-# to the forgejo container.
-AddHost=forge.lab.pacmag.cz:host-gateway
+# No AddHost for forge.lab.pacmag.cz: the forge is on another host and public DNS
+# resolves it to an address this one routes to, out through the 192.168.88.1
+# router. Pinning the name locally would aim the runner at the wrong Caddy.
 WorkingDir=/data
 Exec=forgejo-runner daemon --config /data/config.yml
 AutoUpdate=registry

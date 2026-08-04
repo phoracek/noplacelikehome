@@ -1,0 +1,93 @@
+---
+# Generic host prep for a Quadlet-managed container host. Nothing here is
+# specific to any one service — per-service directories, secrets, and firewall
+# ports live with the play that deploys the service.
+- name: Install Podman and prepare host for Quadlet-managed containers
+  hosts: server
+  become: yes
+  tasks:
+    - name: Enable EPEL (nss-mdns lives there on AlmaLinux 9)
+      ansible.builtin.dnf:
+        name: epel-release
+        state: present
+
+    - name: Install podman, avahi, and nss-mdns
+      # nss-mdns is what lets the host's own libc resolve <hostname>.local back
+      # to itself. avahi alone only *advertises* the name to the LAN — without
+      # nss-mdns anything on the host that dials a service by that name hits the
+      # LAN DNS server and fails.
+      ansible.builtin.dnf:
+        name:
+          - podman
+          - firewalld
+          - avahi
+          - nss-mdns
+          - chrony
+        state: present
+
+    - name: Enable chronyd (keeps the host clock in sync)
+      ansible.builtin.systemd_service:
+        name: chronyd.service
+        state: started
+        enabled: true
+
+    - name: Enable avahi-daemon (advertises <hostname>.local via mDNS)
+      ansible.builtin.systemd_service:
+        name: avahi-daemon.service
+        state: started
+        enabled: true
+
+    - name: Wire mdns4_minimal into /etc/nsswitch.conf hosts line
+      # The nss-mdns RPM doesn't touch nsswitch on its own; without this line the
+      # .so is installed but never consulted. The negative lookahead keeps it
+      # idempotent.
+      ansible.builtin.replace:
+        path: /etc/nsswitch.conf
+        regexp: '^(hosts:\s+files)(?!.*mdns4_minimal)(.*)$'
+        replace: '\1 mdns4_minimal [NOTFOUND=return]\2'
+
+    - name: Enable podman auto-update timer
+      ansible.builtin.systemd_service:
+        name: podman-auto-update.timer
+        state: started
+        enabled: true
+
+    - name: Create the homelab data root
+      # Every service's persistent state lives under here, one subdirectory per
+      # service, created by the play that deploys it.
+      ansible.builtin.file:
+        path: /var/lib/homelab
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Ensure firewalld is running
+      ansible.builtin.systemd_service:
+        name: firewalld
+        state: started
+        enabled: true
+
+    - name: Allow mDNS through firewalld so <hostname>.local resolves on the LAN
+      ansible.posix.firewalld:
+        service: mdns
+        permanent: true
+        immediate: true
+        state: enabled
+
+    - name: Re-apply netavark's firewall rules whenever firewalld reloads
+      # A firewalld reload — `firewall-cmd --reload`, a firewalld restart, or the
+      # package being updated under dnf-automatic — flushes the rules netavark
+      # installs for every Podman network, and nothing puts them back. Containers
+      # then can't reach the bridge gateway, so aardvark-dns stops answering and
+      # every name lookup between containers times out. Caddy turns that into a
+      # blanket 502 across all vhosts while the containers themselves look
+      # perfectly healthy, which makes it a genuinely confusing failure.
+      #
+      # This unit ships with netavark, listens for firewalld's D-Bus reload
+      # signal, and re-applies the rules. It is disabled by default. Without it
+      # the manual recovery is `podman network reload --all`.
+      ansible.builtin.systemd_service:
+        name: netavark-firewalld-reload.service
+        state: started
+        enabled: true

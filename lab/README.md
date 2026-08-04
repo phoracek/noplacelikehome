@@ -1,9 +1,13 @@
 # Dell
 
 A small AlmaLinux 9 host running Home Assistant, Mosquitto, Zigbee2MQTT,
-Dashy, Clouds over Czechoslovakia, and Glances as Podman containers
-managed by systemd via Quadlet. Ansible bootstraps the host; everything
-else is a `.container` unit deployed from this repo.
+and Clouds over Czechoslovakia as Podman containers managed by systemd via
+Quadlet. Ansible bootstraps the host; everything else is a `.container`
+unit deployed from this repo.
+
+`../lab3` runs on this same machine and fronts its own services with a
+Caddy TLS ingress on `*.lab.pacmag.cz`. The services here publish a host
+port each and sit outside it; ports 80 and 443 belong to lab3.
 
 ## Bring-up
 
@@ -31,12 +35,10 @@ After `deploy_containers.yml`, the following systemd services are running on the
 
 | Service | URL | Purpose |
 |---------|-----|---------|
-| `dashy.service`         | <http://home.local> | Dashboard linking everything below |
 | `homeassistant.service` | <http://home.local:8123> | Home Assistant Core |
 | `zigbee2mqtt.service`   | <http://home.local:8124> | Zigbee2MQTT web UI |
 | `clouds-over-czechoslovakia-server.service` | <http://home.local:8125> | Clouds over Czechoslovakia (artifacts served by nginx) |
 | `clouds-over-czechoslovakia.timer` | (every 10 min) | Regenerates the artifacts via the upstream image |
-| `glances.service`       | <http://home.local:61208> | Host metrics |
 | `mosquitto.service`     | `127.0.0.1:1883` (host-local) | MQTT broker |
 
 The host advertises itself as `home.local` over mDNS via `avahi-daemon`,
@@ -63,7 +65,7 @@ fails.
 
 ```sh
 # Status
-sudo systemctl status dashy homeassistant mosquitto zigbee2mqtt clouds-over-czechoslovakia-server glances
+sudo systemctl status homeassistant mosquitto zigbee2mqtt clouds-over-czechoslovakia-server
 sudo systemctl list-timers clouds-over-czechoslovakia.timer
 
 # Logs

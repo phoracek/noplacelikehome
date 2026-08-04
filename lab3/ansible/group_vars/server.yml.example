@@ -1,0 +1,60 @@
+# Copy this file to ansible/group_vars/server.yml and fill in real values.
+# The real file is gitignored — credentials never enter the repo.
+#
+# WEDOS WAPI credentials used by Caddy to solve the ACME DNS-01 challenge for
+# every *.lab.pacmag.cz name this host serves. Pass the plain WAPI password here
+# — the vendored provider hashes it per request (sha1(user + sha1(password) +
+# current Prague hour)).
+#
+# Enabling WAPI in the WEDOS customer administration
+# --------------------------------------------------
+# (https://client.wedos.cz/ for CZ accounts, or https://client.wedos.global/).
+# A WEDOS account with active credit is required.
+#
+#   1. Log in to the customer administration. From the top menu open
+#      "My Account / Customer", then choose "WAPI" in the left menu (on the
+#      global panel, "WAPI" is directly in the left sidebar).
+#   2. In the "WAPI Setup" form:
+#        - Allowed IPs: a comma-separated list of the IPs WAPI may be called
+#          from. Enter the lab's *outbound public IP* (the address that egresses
+#          to the internet — what `curl -s ifconfig.me` returns from this host).
+#          WAPI rejects calls from any other source IP. Update this if your home
+#          public IP changes.
+#        - Preferred protocol: set to JSON (the provider calls the JSON endpoint).
+#        - Notification mode: leave at the default.
+#      Click "Set".
+#   3. In the "Password Settings" form, enter a dedicated WAPI password twice and
+#      click "Set". This is NOT your account login password — the login password
+#      does not work for WAPI.
+#   4. Changes take effect within ~30 minutes.
+#
+# Then fill in below: wedos_username is your WEDOS account login (the same
+# account WAPI was enabled on); wedos_password is the WAPI password from step 3.
+
+wedos_username: "your-wedos-account-login"
+wedos_password: "your-wapi-password"
+
+# VoidAuth (auth.lab.pacmag.cz) is the single sign-on provider. STORAGE_KEY
+# encrypts the secret values VoidAuth stores at rest (OIDC client secrets,
+# signing keys). At least 32 random characters: `openssl rand -base64 48`.
+#
+# Keep it stable once set — rotating it makes the encrypted-at-rest secrets
+# unreadable (VoidAuth supports STORAGE_KEY_SECONDARY for a rotation window).
+voidauth_storage_key: "replace-with-a-long-random-string-at-least-32-chars"
+
+# Grist (grist.lab.pacmag.cz) authenticates users itself via OIDC against
+# VoidAuth, so it needs two secrets:
+#   * grist_session_secret signs Grist's own session cookies — any long random
+#     string: `openssl rand -hex 32`. Changing it logs everyone out.
+#   * grist_oidc_client_secret is the client secret of the Grist OIDC App in the
+#     VoidAuth admin UI (client id "grist", redirect URI
+#     https://grist.lab.pacmag.cz/oauth2/callback). Changing it here without
+#     changing it there breaks login.
+grist_session_secret: "replace-with-a-long-random-string"
+grist_oidc_client_secret: "replace-with-the-voidauth-grist-client-secret"
+
+# Forgejo needs no entry here. It generates its own secrets (SECRET_KEY,
+# INTERNAL_TOKEN, JWT_SECRET, LFS_JWT_SECRET) into
+# /var/lib/homelab/forgejo/gitea/conf/app.ini on first run and keeps them there
+# as part of its data — that file is what makes gitea.db readable, so it belongs
+# with the data rather than with the playbooks.

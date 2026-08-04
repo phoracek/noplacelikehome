@@ -129,6 +129,23 @@
         state: started
         enabled: true
 
+    - name: Re-apply netavark's firewall rules whenever firewalld reloads
+      # A firewalld reload — `firewall-cmd --reload`, a firewalld restart, or the
+      # package being updated under dnf-automatic — flushes the rules netavark
+      # installs for every Podman network, and nothing puts them back. Containers
+      # then can't reach the bridge gateway, so aardvark-dns stops answering and
+      # every name lookup between containers times out. Caddy turns that into a
+      # blanket 502 across all vhosts while the containers themselves look
+      # perfectly healthy, which makes it a genuinely confusing failure.
+      #
+      # This unit ships with netavark, listens for firewalld's D-Bus reload
+      # signal, and re-applies the rules. It is disabled by default. Without it
+      # the manual recovery is `podman network reload --all`.
+      ansible.builtin.systemd_service:
+        name: netavark-firewalld-reload.service
+        state: started
+        enabled: true
+
     - name: Open ports 80 and 443 for Caddy
       # 443 is the client-facing HTTPS port, and also the path Forgejo Actions
       # runners (and the job containers they spawn) take to reach the Forgejo

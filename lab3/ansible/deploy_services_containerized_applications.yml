@@ -1,0 +1,192 @@
+---
+- name: Deploy Quadlet-managed containers
+  hosts: server
+  become: yes
+  # Caddy (the shared TLS ingress) is deployed separately by deploy_services_caddy.yml,
+  # which runs AFTER this play so every backend is up before the proxy forwards.
+  # This play still owns the shared `homelab` podman network that Caddy and the
+  # backends both join — it must exist first, so it lives with the backends.
+  vars:
+    quadlet_dir: /etc/containers/systemd
+    container_units:
+      - voidauth
+      - glances
+      - dashy
+      - grist
+      - forgejo
+  tasks:
+    # Podman won't create bind-mount sources, so every service's data dirs have
+    # to exist before its unit starts. These tasks only guarantee the directory;
+    # they never touch its contents.
+    - name: Ensure VoidAuth data directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop:
+        - /var/lib/homelab/voidauth/config
+        - /var/lib/homelab/voidauth/db
+
+    # STORAGE_KEY is a secret, so it's templated from the gitignored group_vars
+    # into a 0600 env file the container reads (EnvironmentFile in
+    # voidauth.container) rather than baked into the committed Quadlet unit.
+    - name: Install VoidAuth environment file
+      ansible.builtin.template:
+        src: templates/voidauth/voidauth.env.j2
+        dest: /var/lib/homelab/voidauth/voidauth.env
+        owner: root
+        group: root
+        mode: "0600"
+      notify: Restart voidauth
+
+    - name: Ensure Dashy data directory exists
+      ansible.builtin.file:
+        path: /var/lib/homelab/dashy
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    # The dashboard is declarative and holds no secrets, so it lives in the repo
+    # and is copied verbatim, overwriting whatever is on the host.
+    - name: Install Dashy config
+      ansible.builtin.copy:
+        src: files/dashy/conf.yml
+        dest: /var/lib/homelab/dashy/conf.yml
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart dashy
+
+    # Glances keeps no persistent state, so it needs no data directory.
+
+    # Grist runs as uid/gid 1001 inside the container and writes its home DB and
+    # documents into the bind mount, so the host directory must be owned by 1001
+    # (rootful Podman maps container uid 1001 to host uid 1001). Left root-owned,
+    # Grist opens its SQLite DBs read-only and fails with "SQLITE_READONLY:
+    # attempt to write a readonly database". `recurse` keeps the play
+    # authoritative over the whole tree.
+    - name: Ensure Grist data directory exists (owned by the grist uid)
+      ansible.builtin.file:
+        path: /var/lib/homelab/grist/data
+        state: directory
+        owner: "1001"
+        group: "1001"
+        mode: "0755"
+        recurse: true
+
+    # GRIST_SESSION_SECRET and GRIST_OIDC_IDP_CLIENT_SECRET are secrets, so
+    # they're templated from the gitignored group_vars into a 0600 env file the
+    # container reads (EnvironmentFile in grist.container).
+    - name: Install Grist environment file
+      ansible.builtin.template:
+        src: templates/grist/grist.env.j2
+        dest: /var/lib/homelab/grist/grist.env
+        owner: root
+        group: root
+        mode: "0600"
+      notify: Restart grist
+
+    # Forgejo runs as USER_UID/USER_GID 1000 inside the container, so its
+    # bind-mounted data dirs must be owned by uid/gid 1000 on the host. Otherwise
+    # the git user can't open gitea.db and the container comes up as a fresh
+    # install.
+    #
+    # No `recurse` here, unlike Grist: this tree is several gigabytes of git
+    # objects, packages and artifacts, and walking it on every deploy would cost
+    # minutes for nothing.
+    - name: Ensure Forgejo data directories exist (owned by the git uid)
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "1000"
+        group: "1000"
+        mode: "0755"
+      loop:
+        - /var/lib/homelab/forgejo/gitea
+        - /var/lib/homelab/forgejo/git
+        - /var/lib/homelab/forgejo/var
+
+    # Git over SSH is raw TCP, so it cannot be proxied by Caddy the way the web
+    # UI is — Forgejo's built-in SSH server publishes host port 2222 directly and
+    # needs its own hole in the firewall. It belongs to this play rather than to
+    # generic host prep for the same reason 80/443 belong to the Caddy play: the
+    # port is dead without the service that binds it.
+    - name: Open port 2222 for Forgejo's git-over-SSH
+      ansible.posix.firewalld:
+        port: 2222/tcp
+        permanent: true
+        immediate: true
+        state: enabled
+
+    # --- Quadlet units ---
+    - name: Install network Quadlet unit
+      ansible.builtin.copy:
+        src: ../quadlet/homelab.network
+        dest: "{{ quadlet_dir }}/homelab.network"
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reload systemd
+
+    - name: Install container Quadlet units
+      ansible.builtin.copy:
+        src: "../quadlet/{{ item }}.container"
+        dest: "{{ quadlet_dir }}/{{ item }}.container"
+        owner: root
+        group: root
+        mode: "0644"
+      loop: "{{ container_units }}"
+      register: quadlet_files
+      notify: Reload systemd
+
+    # Run the pending daemon-reload before starting units, so systemd sees the
+    # latest unit files.
+    - name: Apply pending systemd reload
+      ansible.builtin.meta: flush_handlers
+
+    - name: Start network
+      ansible.builtin.systemd_service:
+        name: homelab-network.service
+        state: started
+
+    - name: Start container services
+      ansible.builtin.systemd_service:
+        name: "{{ item }}.service"
+        state: started
+        enabled: false
+      loop: "{{ container_units }}"
+
+    - name: Restart services whose Quadlet unit changed
+      ansible.builtin.systemd_service:
+        name: "{{ item.item }}.service"
+        state: restarted
+      loop: "{{ quadlet_files.results }}"
+      when: item.changed
+      loop_control:
+        label: "{{ item.item }}"
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+
+    - name: Restart voidauth
+      ansible.builtin.systemd_service:
+        name: voidauth.service
+        state: restarted
+      failed_when: false
+
+    - name: Restart dashy
+      ansible.builtin.systemd_service:
+        name: dashy.service
+        state: restarted
+      failed_when: false
+
+    - name: Restart grist
+      ansible.builtin.systemd_service:
+        name: grist.service
+        state: restarted
+      failed_when: false

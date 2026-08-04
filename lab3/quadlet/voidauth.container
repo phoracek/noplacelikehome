@@ -9,11 +9,8 @@ ContainerName=voidauth
 # Internal-only: joins the shared network with Caddy and publishes no host port,
 # reached only via Caddy at https://auth.lab.pacmag.cz. VoidAuth serves on port
 # 3000 inside the container. It is the one vhost NOT placed behind forward_auth —
-# it IS the login portal — so Caddy reverse-proxies it directly. Caddy's
-# forward_auth on the gated apps (glances, dashy) calls this container at
-# voidauth:3000/api/authz/forward-auth, and Forgejo and Grist authenticate against
-# it over OIDC.
-Network=forgejo.network
+# it IS the login portal.
+Network=homelab.network
 # Config (logo, email templates) and the SQLite database live on bind mounts.
 # Podman won't create the bind-mount sources, so Ansible makes both dirs first.
 Volume=/var/lib/homelab/voidauth/config:/app/config:Z
@@ -21,24 +18,23 @@ Volume=/var/lib/homelab/voidauth/db:/app/db:Z
 # Single-user homelab: use the bundled SQLite adapter (db.sqlite under /app/db)
 # rather than running a separate Postgres container.
 Environment=DB_ADAPTER=sqlite
-# APP_URL must be the full external URL of this service.
+# The full external URL of this service, and also the OIDC issuer — changing it
+# invalidates the registered clients (Forgejo, Grist) and their redirect URIs.
 Environment=APP_URL=https://auth.lab.pacmag.cz
-# Session cookie domain. Must be set to pacmag.cz (not lab.pacmag.cz): VoidAuth's
+# Session cookie domain. Must be pacmag.cz, not lab.pacmag.cz: VoidAuth's
 # ProxyAuth "covered by" check counts a host as covered only when it's a STRICT
 # subdomain of the session domain, so an apex gated host equal to the session
 # domain is rejected. Dashy lives on the apex lab.pacmag.cz, so the session domain
-# has to be its parent pacmag.cz — which still covers every gated host (all end in
-# .pacmag.cz: lab.pacmag.cz, grist.lab.pacmag.cz, glances.t470s.lab.pacmag.cz) and
-# the apex too. The cookie is therefore sent to any pacmag.cz host, acceptable
-# since the whole domain is the lab's.
+# has to be its parent — which still covers every gated host and the apex too.
 Environment=SESSION_DOMAIN=pacmag.cz
 # Landing page for logout / invite-accept / logo click.
 Environment=DEFAULT_REDIRECT=https://lab.pacmag.cz
 Environment=APP_TITLE=pacmag lab
 Environment=TZ=Europe/Prague
 # STORAGE_KEY encrypts secret values at rest (OIDC client secrets, keys). It's a
-# secret, so it's templated by Ansible from the gitignored group_vars/server.yml
-# into this 0600 env file rather than committed inline here.
+# secret, so Ansible templates it from the gitignored group_vars/server.yml into
+# this 0600 env file rather than committing it inline here. Rotating it makes the
+# existing encrypted secrets unreadable.
 EnvironmentFile=/var/lib/homelab/voidauth/voidauth.env
 AutoUpdate=registry
 

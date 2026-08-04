@@ -1,0 +1,106 @@
+# Kept plaintext on port 80 — placeholder health endpoint.
+http://optiplex.lab.pacmag.cz {
+	respond "OK" 200
+}
+
+# Shared TLS config for every site below. ACME DNS-01 via the vendored WEDOS DNS
+# provider — required because every *.lab.pacmag.cz name resolves only to a
+# private IP, so the HTTP-01 and TLS-ALPN challenges can't reach this host.
+# Credentials come from the container environment (WEDOS_USERNAME / WEDOS_PASSWORD).
+(wedos_tls) {
+	tls {
+		dns wedos {
+			username {env.WEDOS_USERNAME}
+			password {env.WEDOS_PASSWORD}
+		}
+		# Poll WEDOS's own authoritative nameservers, NOT public recursive
+		# resolvers: the zone's SOA negative-cache TTL is 3600s, so any lookup of
+		# an _acme-challenge name while it is still empty poisons the public
+		# resolvers for longer than propagation_timeout below and guarantees the
+		# attempt fails. All four WEDOS nameservers are listed, both anycast
+		# addresses where they have two, since they lag each other after a write.
+		#
+		# 45.138.106.1/185.8.238.1 = ns.wedos.cz, 45.138.106.0 = ns.wedos.com,
+		# 185.8.238.0 = ns.wedos.eu, 99.83.142.9/75.2.92.86 = ns.wedos.net.
+		resolvers 45.138.106.0 45.138.106.1 185.8.238.0 185.8.238.1 75.2.92.86 99.83.142.9
+		# Flat wait after presenting the token, before the propagation check runs.
+		# It has to outlast WEDOS's inter-nameserver sync: the propagation check
+		# passes as soon as ONE node serves the token, so a shorter delay has Caddy
+		# ask Let's Encrypt to validate while the slowest node (consistently
+		# ns.wedos.net) still serves nothing or the PREVIOUS attempt's token. That
+		# second case is self-perpetuating — each failure leaves a token in place
+		# for the next attempt to trip over — so retries never converge on their
+		# own. 30s and 180s both failed this way. Renewals are twice a year per
+		# name, so overshooting costs nothing.
+		propagation_delay 600s
+		# Ceiling, not a fixed wait: in steady state the check passes in a minute
+		# or two, bounded by how long WEDOS takes to commit the zone.
+		propagation_timeout 1800s
+	}
+}
+
+# Shared edge auth for the services with no login of their own (Glances and
+# Dashy). Caddy clones each request to VoidAuth's forward-auth endpoint; VoidAuth
+# checks the x-voidauth-session cookie against its ProxyAuth Domain rules and
+# returns 2xx to allow or a redirect to its login page to deny. On success the
+# Remote-* identity headers are copied onto the request for any downstream app
+# that supports trusted-header SSO.
+#
+# This only works with the gate and VoidAuth on the same host: Caddy overwrites
+# X-Forwarded-Host with the proxy target's Host, so a forward_auth pointed at a
+# remote VoidAuth by URL asks it to authorize auth.lab.pacmag.cz — the always-
+# permitted login portal — and it returns 2xx for everything, silently opening
+# the gate.
+(voidauth) {
+	forward_auth voidauth:3000 {
+		uri /api/authz/forward-auth
+		copy_headers Remote-User Remote-Groups Remote-Name Remote-Email
+	}
+}
+
+# VoidAuth — the SSO provider and login portal. Plain reverse proxy: this is the
+# one site that must stay reachable without auth, since it's what forward_auth
+# gates and OIDC flows redirect users to.
+auth.lab.pacmag.cz {
+	import wedos_tls
+	reverse_proxy voidauth:3000
+}
+
+glances.lab.pacmag.cz {
+	import wedos_tls
+	# Glances' web UI has no authentication of its own and, because the container
+	# runs with --pid=host, exposes every host process's full command line (which
+	# routinely leaks secrets passed as CLI args). Gate it at the edge.
+	import voidauth
+	reverse_proxy glances:61208
+}
+
+lab.pacmag.cz {
+	import wedos_tls
+	# Dashy has no login of its own; gate it at the edge.
+	#
+	# The apex is why VoidAuth's SESSION_DOMAIN is pacmag.cz rather than
+	# lab.pacmag.cz — see the comment on SESSION_DOMAIN in quadlet/voidauth.container.
+	import voidauth
+	reverse_proxy dashy:8080
+}
+
+grist.lab.pacmag.cz {
+	import wedos_tls
+	# Not behind the forward_auth gate: Grist authenticates users itself via OIDC
+	# against VoidAuth and must receive the callback at /oauth2/callback.
+	# GRIST_FORCE_LOGIN redirects anonymous browser hits to the OIDC login; API
+	# clients' `Authorization: Bearer <api-key>` is validated by Grist directly.
+	# reverse_proxy upgrades Grist's WebSockets automatically.
+	reverse_proxy grist:8484
+}
+
+forge.lab.pacmag.cz {
+	import wedos_tls
+	# Not behind the forward_auth gate: the CI runners, git-over-HTTPS, the
+	# container registry and the API all reach this vhost and authenticate with
+	# tokens, which carry no VoidAuth session cookie — a proxy gate would
+	# 302-redirect and break them. Forgejo instead uses VoidAuth as an OIDC login
+	# source, so SSO covers the web UI while tokens keep working.
+	reverse_proxy forgejo:3000
+}

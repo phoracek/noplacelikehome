@@ -4,125 +4,17 @@
   become: yes
   # Caddy (the shared TLS ingress) is deployed separately by deploy_services_caddy.yml,
   # which runs AFTER this play so every backend is up before the proxy forwards.
-  # This play still owns the shared `forgejo` podman network that Caddy and the
-  # backends both join — it must exist first, so it lives with the backends.
+  # This play owns the shared `forgejo` podman network. Caddy is its only member,
+  # but it must exist before Caddy starts, so it lives here; renaming it would
+  # mean recreating the network, which is churn for no gain.
+  #
+  # `container_units` is empty rather than deleted: the runner units below are
+  # templated (each embeds its own name), not copied, and this list is where a
+  # plain container on this host would go.
   vars:
     quadlet_dir: /etc/containers/systemd
-    container_units:
-      - forgejo
-      - glances
-      - dashy
-      - grist
-      - voidauth
-      - syncthing
+    container_units: []
   tasks:
-    # Forgejo runs as USER_UID/USER_GID 1000 inside the container, so its
-    # bind-mounted data dirs must be owned by uid/gid 1000 on the host (rootful
-    # podman maps container uid 1000 to host uid 1000). Otherwise the git user
-    # can't create gitea.db etc. and the installer fails with "unable to open
-    # database file".
-    - name: Ensure Forgejo data directories exist (owned by the git uid)
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: directory
-        owner: "1000"
-        group: "1000"
-        mode: "0755"
-      loop:
-        - /var/lib/homelab/forgejo/gitea
-        - /var/lib/homelab/forgejo/git
-        - /var/lib/homelab/forgejo/var
-
-    # Dashy bind-mounts a single config file; its parent dir must exist on the
-    # host before the unit starts (Podman won't create the bind-mount source).
-    - name: Ensure Dashy data directory exists
-      ansible.builtin.file:
-        path: /var/lib/homelab/dashy
-        state: directory
-        owner: root
-        group: root
-        mode: "0755"
-
-    - name: Install Dashy config
-      ansible.builtin.copy:
-        src: files/dashy/conf.yml
-        dest: /var/lib/homelab/dashy/conf.yml
-        owner: root
-        group: root
-        mode: "0644"
-      notify: Restart dashy
-
-    # Grist persists documents under /persist; Podman won't create the bind-mount
-    # source, so the data dir must exist before the unit starts. The gristlabs
-    # image runs its server as the in-image `grist` user (uid/gid 1001), not root,
-    # so the host dir must be owned by 1001:1001 or Grist can't write its SQLite
-    # DBs and fails with "SQLITE_READONLY: attempt to write a readonly database"
-    # (rootful Podman maps container uid 1001 to host uid 1001). recurse fixes any
-    # root-owned files an earlier mis-owned boot may have left behind.
-    - name: Ensure Grist data directory exists (owned by the grist uid)
-      ansible.builtin.file:
-        path: /var/lib/homelab/grist/data
-        state: directory
-        owner: "1001"
-        group: "1001"
-        mode: "0755"
-        recurse: true
-
-    # GRIST_SESSION_SECRET signs Grist's session cookies; it's a secret so it's
-    # templated from the gitignored group_vars into a 0600 env file the grist
-    # container reads (EnvironmentFile in grist.container), not baked into the
-    # committed Quadlet unit.
-    - name: Install Grist environment file
-      ansible.builtin.template:
-        src: templates/grist/grist.env.j2
-        dest: /var/lib/homelab/grist/grist.env
-        owner: root
-        group: root
-        mode: "0600"
-      notify: Restart grist
-
-    # VoidAuth (the SSO/auth provider) bind-mounts its config and SQLite database;
-    # Podman won't create the bind-mount sources, so both dirs must exist before
-    # the unit starts. The image runs as root, so root:root is writable.
-    - name: Ensure VoidAuth data directories exist
-      ansible.builtin.file:
-        path: "{{ item }}"
-        state: directory
-        owner: root
-        group: root
-        mode: "0755"
-      loop:
-        - /var/lib/homelab/voidauth/config
-        - /var/lib/homelab/voidauth/db
-
-    # STORAGE_KEY (encrypts secrets at rest inside VoidAuth) is a secret, so it's
-    # templated from the gitignored group_vars into this 0600 env file the
-    # voidauth container reads (EnvironmentFile in voidauth.container), not baked
-    # into the committed Quadlet unit.
-    - name: Install VoidAuth environment file
-      ansible.builtin.template:
-        src: templates/voidauth/voidauth.env.j2
-        dest: /var/lib/homelab/voidauth/voidauth.env
-        owner: root
-        group: root
-        mode: "0600"
-      notify: Restart voidauth
-
-    # Syncthing stores its config, TLS device keys, index database, and the default
-    # synced folders under the single bind-mounted /var/syncthing tree. Podman won't
-    # create the bind-mount source, and the image runs syncthing as uid/gid 1000
-    # after dropping from root, so the host dir must exist owned by 1000:1000
-    # (rootful Podman maps container uid 1000 to host uid 1000) or syncthing can't
-    # write its keys/database. Syncthing needs no committed secrets, so there's no
-    # env file to template (the GUI is gated by VoidAuth at the edge).
-    - name: Ensure Syncthing data directory exists (owned by the syncthing uid)
-      ansible.builtin.file:
-        path: /var/lib/homelab/syncthing
-        state: directory
-        owner: "1000"
-        group: "1000"
-        mode: "0755"
-
     # Each Forgejo Actions runner bind-mounts /var/lib/homelab/<name> at /data
     # (its config.yml, action cache, workflow workdirs). Podman won't create the
     # bind-mount source, so the dir must exist — owned by the in-container runner
@@ -202,6 +94,10 @@
         - runner.token != "PASTE_TOKEN_HERE"
       register: runner_quadlet_files
       notify: Reload systemd
+      # Same reason as the config.yml task above: the loop item is the whole
+      # runner dict, token included, and Ansible dumps the item verbatim when a
+      # task in this loop fails.
+      no_log: true
 
     # Run pending handlers (image build, daemon-reload) before starting units,
     # so the custom image exists and systemd sees the latest unit files.
@@ -224,7 +120,9 @@
       ansible.builtin.systemd_service:
         name: "{{ item.item }}.service"
         state: restarted
-      loop: "{{ quadlet_files.results }}"
+      # `| default([])` because an empty container_units makes the install task
+      # above skip and register no `results` key at all.
+      loop: "{{ quadlet_files.results | default([]) }}"
       when: item.changed
       loop_control:
         label: "{{ item.item }}"
@@ -272,21 +170,3 @@
     - name: Reload systemd
       ansible.builtin.systemd_service:
         daemon_reload: true
-
-    - name: Restart dashy
-      ansible.builtin.systemd_service:
-        name: dashy.service
-        state: restarted
-      failed_when: false
-
-    - name: Restart grist
-      ansible.builtin.systemd_service:
-        name: grist.service
-        state: restarted
-      failed_when: false
-
-    - name: Restart voidauth
-      ansible.builtin.systemd_service:
-        name: voidauth.service
-        state: restarted
-      failed_when: false

@@ -13,11 +13,13 @@ ContainerName=forgejo
 # host port for the web UI, reachable only via Caddy at https://forge.lab.pacmag.cz.
 # Git-over-SSH cannot go through Caddy (it's raw TCP, not HTTP), so the built-in
 # SSH server is published directly on host port 2222.
-Network=forgejo.network
+Network=homelab.network
 PublishPort=2222:2222
 Volume=/var/lib/homelab/forgejo/gitea:/data/gitea:Z
 Volume=/var/lib/homelab/forgejo/git:/data/git:Z
 Volume=/var/lib/homelab/forgejo/var:/var/lib/gitea:Z
+# Rootful Podman maps container uid 1000 straight through to host uid 1000, which
+# is this host's `admin` login account. Forgejo only ever compares numbers.
 Environment=USER_UID=1000
 Environment=USER_GID=1000
 Environment=FORGEJO__server__HTTP_PORT=3000
@@ -25,7 +27,7 @@ Environment=FORGEJO__server__ROOT_URL=https://forge.lab.pacmag.cz/
 Environment=FORGEJO__server__DOMAIN=forge.lab.pacmag.cz
 # Git over SSH via Forgejo's built-in Go SSH server. SSH_LISTEN_PORT is the
 # in-container listen port (2222, mapped to host 2222 above); SSH_PORT is the
-# port advertised in clone URLs. Host port 22 is the T470s's own sshd, so SSH
+# port advertised in clone URLs. Host port 22 is the host's own sshd, so SSH
 # uses 2222.
 Environment=FORGEJO__server__DISABLE_SSH=false
 Environment=FORGEJO__server__START_SSH_SERVER=true
@@ -34,12 +36,12 @@ Environment=FORGEJO__server__SSH_PORT=2222
 Environment=FORGEJO__server__SSH_DOMAIN=forge.lab.pacmag.cz
 Environment=FORGEJO__database__DB_TYPE=sqlite3
 # OAuth2/OIDC login via VoidAuth (the auth source itself is added once in the
-# admin UI). ACCOUNT_LINKING=auto links an OIDC login to the existing local user
-# whose email matches the OIDC `email` claim instead of minting a duplicate — so
-# the first sign-in through VoidAuth lands on the existing admin account (admin
-# rights intact), provided the VoidAuth user's email matches it. USERNAME=email
-# derives the username from the email claim; ENABLE_AUTO_REGISTRATION lets a
-# never-seen identity create an account (single trusted IdP, fine here).
+# admin UI and lives in gitea.db). ACCOUNT_LINKING=auto links an OIDC login to
+# the existing local user whose email matches the OIDC `email` claim instead of
+# minting a duplicate, so a sign-in through VoidAuth lands on the existing admin
+# account. USERNAME=email derives the username from the email claim;
+# ENABLE_AUTO_REGISTRATION lets a never-seen identity create an account (single
+# trusted IdP, fine here).
 Environment=FORGEJO__oauth2_client__ENABLE_AUTO_REGISTRATION=true
 Environment=FORGEJO__oauth2_client__ACCOUNT_LINKING=auto
 Environment=FORGEJO__oauth2_client__USERNAME=email

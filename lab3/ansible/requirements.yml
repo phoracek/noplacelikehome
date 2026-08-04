@@ -1,0 +1,6 @@
+---
+# Install with: ansible-galaxy collection install -r requirements.yml
+# (The full `ansible` package already bundles ansible.posix; this is for hosts
+# that installed ansible-core only.)
+collections:
+  - name: ansible.posix  # firewalld module used by deploy_services_caddy.yml

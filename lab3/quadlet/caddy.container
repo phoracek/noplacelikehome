@@ -7,16 +7,12 @@ Description=Caddy reverse proxy
 # there is no registry copy of this tag.
 Image=localhost/caddy-wedos:latest
 ContainerName=caddy
-Network=forgejo.network
+Network=homelab.network
 PublishPort=80:80
 PublishPort=443:443
 # WEDOS WAPI credentials for the DNS-01 challenge (gitignored, templated by
 # Ansible from group_vars/server.yml).
 EnvironmentFile=/var/lib/homelab/caddy/wedos.env
-# HTTP basic-auth credentials gating the ramus-mcp control channel (username +
-# bcrypt hash), same provenance as the WEDOS creds above. The app vhosts carry no
-# edge creds here — nothing else on this host is gated by Caddy.
-EnvironmentFile=/var/lib/homelab/caddy/ramus-mcp.env
 Volume=/var/lib/homelab/caddy/Caddyfile:/etc/caddy/Caddyfile:Z
 Volume=/var/lib/homelab/caddy/data:/data:Z
 Volume=/var/lib/homelab/caddy/config:/config:Z

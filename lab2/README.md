@@ -45,8 +45,8 @@ ssh-copy-id petr@192.168.88.254
 Provision the host. Before deploying services, copy
 `group_vars/server.yml.example` to `group_vars/server.yml` (gitignored) and fill
 in the credentials it documents: the Wedos WAPI credentials Caddy uses for TLS
-(see [Forgejo and TLS](#forgejo-and-tls)) and the VoidAuth `STORAGE_KEY` that
-secures the single sign-on provider (see [VoidAuth](#voidauth-single-sign-on)).
+(see [TLS](#tls)) and the runner registration pairs under `forgejo_runners`
+(see [Forgejo Actions runners](#forgejo-actions-runners)).
 Install the `ansible.posix` collection too — the hardware-MCP play uses its
 `synchronize` (rsync) module.
 
@@ -78,13 +78,8 @@ After `deploy_services.yml` the following services are running:
 | Service | URL | Purpose |
 |---------|-----|---------|
 | `caddy.service` | <http://t470s.lab.pacmag.cz> | Reverse proxy (TLS termination) |
-| `voidauth.service` | <https://auth.lab.pacmag.cz> | Single sign-on / auth provider (gates the apps below) |
-| `forgejo.service` | <https://forge.lab.pacmag.cz> | Git forge (internal, via Caddy; OIDC login via VoidAuth) |
-| `forgejo-runner-1.service`, `forgejo-runner-2.service` | (workers, no UI) | Forgejo Actions runners — one systemd unit per entry in `forgejo_runners` |
-| `glances.service` | <https://glances.t470s.lab.pacmag.cz> | System monitor (internal, via Caddy; VoidAuth SSO) |
-| `dashy.service` | <https://lab.pacmag.cz> | Service dashboard (internal, via Caddy; VoidAuth SSO) |
-| `grist.service` | <https://grist.lab.pacmag.cz> | Spreadsheet / database (internal, via Caddy; OIDC login via VoidAuth) |
-| `syncthing.service` | <https://syncthing.lab.pacmag.cz> | File synchronization — GUI internal via Caddy (VoidAuth SSO); sync on host ports 22000/21027 |
+| `forgejo-runner-1.service`, `forgejo-runner-2.service` | (workers, no UI) | Forgejo Actions runners — one systemd unit per entry in `forgejo_runners`. They serve the forge on the OptiPlex and run its hardware-bench jobs here |
+| `ramus-mcp` | <https://ramus-mcp.lab.pacmag.cz> | Hardware bench MCP — a host systemd service, not a container |
 
 ### DHCP static leases
 
@@ -128,6 +123,8 @@ Allow traffic to the T470s (forward chain):
   place-before=0
 ```
 
+Nothing on this host binds 2222; the rule can drop it the next time it is edited.
+
 Allow SSH, Winbox, and WebFig to the router (input chain):
 
 ```routeros
@@ -156,48 +153,12 @@ usefully from machines that have the static route to 192.168.88.0/24 via
 | Hostname | A record |
 |----------|----------|
 | `t470s.lab.pacmag.cz` | `192.168.88.254` |
-| `auth.lab.pacmag.cz` | `192.168.88.254` |
-| `forge.lab.pacmag.cz` | `192.168.88.254` |
-| `glances.t470s.lab.pacmag.cz` | `192.168.88.254` |
-| `lab.pacmag.cz` | `192.168.88.254` |
-| `grist.lab.pacmag.cz` | `192.168.88.254` |
-| `syncthing.lab.pacmag.cz` | `192.168.88.254` |
+| `ramus-mcp.lab.pacmag.cz` | `192.168.88.254` |
 
-## Forgejo and TLS
+The rest of `*.lab.pacmag.cz` is served by the OptiPlex (`../lab3`) and points at
+`192.168.0.252`.
 
-[Forgejo](https://forge.lab.pacmag.cz)'s web UI runs internal-only: it shares a
-private Podman network (`forgejo`) with Caddy and publishes no host port for
-HTTP, so the UI and HTTPS git are reachable only through Caddy, which terminates
-TLS and reverse-proxies to it.
-
-Git over SSH cannot go through Caddy (it's raw TCP, not HTTP), so Forgejo's
-built-in SSH server is published directly on **host port 2222** (host port 22 is
-the T470s's own `sshd`). Clone over SSH with:
-
-```sh
-git clone ssh://git@forge.lab.pacmag.cz:2222/<owner>/<repo>.git
-```
-
-Add your SSH public key under *Settings → SSH / GPG Keys* first. SSH access from
-the home network requires the router to forward port 2222 (see the forward rule
-above) — HTTPS git needs no key and works the same way over `https://`.
-
-### Login via VoidAuth (OIDC)
-
-Forgejo is the one app **not** placed behind the [VoidAuth](#voidauth-single-sign-on)
-`forward_auth` gate: its CI runners, git-over-HTTPS, and API all hit
-`forge.lab.pacmag.cz` with tokens that carry no session cookie, so a proxy gate
-would 302-redirect and break them. Instead Forgejo uses VoidAuth as an **OIDC
-login source**, so the web UI gets SSO while tokens keep working untouched.
-
-The Quadlet sets `[oauth2_client]` so a VoidAuth login **links to the existing
-admin account** instead of creating a duplicate: `ACCOUNT_LINKING=auto` links by
-matching email, `USERNAME=email` derives the username from the email claim, and
-`ENABLE_AUTO_REGISTRATION=true` lets a never-seen identity create an account. The
-link works only if the VoidAuth user's email matches the Forgejo account's, so
-both are set to `p.horacek94@gmail.com`. The OAuth2 source itself (named
-`voidauth`, matching the `…/user/oauth2/voidauth/callback` redirect URI) is added
-once in Forgejo's admin UI against VoidAuth's OIDC app.
+## TLS
 
 Because every `*.lab.pacmag.cz` name resolves to a private IP, the public ACME
 HTTP-01 / TLS-ALPN challenges cannot reach the host. Caddy therefore obtains the
@@ -211,24 +172,38 @@ the host from `ansible/files/caddy/Containerfile`.
 DNS-01 issuance needs only **outbound** access to Let's Encrypt and the Wedos
 WAPI — inbound 443 is only for client access. Prerequisites:
 
-1. Create the A record `forge.lab.pacmag.cz → 192.168.88.254` (table above).
+1. Create an A record for the name pointing at `192.168.88.254` (table above).
 2. In the Wedos customer admin, enable **WAPI**, set a dedicated WAPI password,
    and allowlist the lab's outbound public IP (WAPI rejects other source IPs).
 3. Copy `ansible/group_vars/server.yml.example` to `server.yml` (gitignored) and
    fill in `wedos_username` / `wedos_password` (the plain WAPI password).
-4. Ensure the router forwards the client-facing ports to the T470s — `443` for
-   the web UI / HTTPS git, and `2222` for git over SSH (see the forward rule
-   above). Neither is needed for cert issuance (which is outbound-only); they're
-   for reaching Forgejo from across the router.
+4. Ensure the router forwards `443` to the T470s (see the forward rule above).
+   It isn't needed for cert issuance, which is outbound-only; it's for reaching
+   the service from across the router.
+
+The only certificate this host holds is `ramus-mcp.lab.pacmag.cz`. A name may be
+served from exactly one host: two machines renewing one name collide on the
+single shared `_acme-challenge` TXT record, so a vhost or a stored certificate
+for a name lab3 serves must never be left here.
 
 ## Forgejo Actions runners
 
 Two [Forgejo Actions](https://forgejo.org/docs/latest/user/actions/) runners
-pick up CI jobs locally and run each job as a Podman container. Actions are
-already enabled on the server (`FORGEJO__actions__ENABLED=true`); the runners
-are defined declaratively as one entry each in `forgejo_runners`
-(`group_vars/server.yml`), rendered into one Quadlet unit + one `config.yml`
-per entry. Add or remove entries to change how many runners run.
+pick up CI jobs and run each job as a Podman container **on this host**, which is
+the point of them being here: ramus's hardware lanes need the bench attached to
+this machine, and the OptiPlex cannot reach `192.168.88.0/24` at all — this LAN
+sits behind a router that masquerades outbound, so traffic goes one way only.
+Actions are enabled on the forge itself (`FORGEJO__actions__ENABLED=true` in its
+Quadlet, over on the OptiPlex); the runners are defined declaratively as one
+entry each in `forgejo_runners` (`group_vars/server.yml`), rendered into one
+Quadlet unit + one `config.yml` per entry. Add or remove entries to change how
+many runners run.
+
+The jobs that need this machine specifically are ramus's hardware lanes
+(`protocol-hw-tests`, `editor-hw-tests`): they flash real firmware and drive the
+bench through the [hardware bench MCP](#hardware-bench-mcp) below. They serialize
+on a repo-wide `concurrency: hw-bench` group so only one job touches the device at
+a time — which is why two runners do not mean two concurrent flashes.
 
 ### Registering the runners
 
@@ -261,11 +236,13 @@ server.
 ### Runner ↔ host Podman: how it's wired
 
 Each runner reaches Forgejo at `https://forge.lab.pacmag.cz/` — the same URL
-clients use. The web UI publishes no host port, so the runner Quadlet maps
-`forge.lab.pacmag.cz` to `host-gateway` (and passes the same `--add-host` to
-every job container it spawns, via `container.options` in `config.yml`),
-hairpinning back to Caddy's published 443. The cert is a real Let's Encrypt
-cert, so no insecure-TLS flags are needed.
+clients use, resolving to the OptiPlex. That is an ordinary outbound HTTPS
+connection: out through the `192.168.88.1` router, which masquerades, to Caddy on
+`192.168.0.252`. The cert is a real Let's Encrypt cert, so no insecure-TLS flags
+are needed, and neither the runner Quadlet nor the job containers it spawns pin
+the name to a host address. The same DNS carries the registry pulls in ramus's
+workflows (`forge.lab.pacmag.cz/petr/ramus/agentic`), which go through the host's
+Podman.
 
 To spawn job containers as siblings, the runner needs the host's rootful Podman
 socket — granted without disabling any security layer:
@@ -323,162 +300,14 @@ with (set in `ansible/templates/forgejo-runner/config.yml.j2`).
 
 Each runner's state (`config.yml` + workdir/cache) lives at
 `/var/lib/homelab/<runner-name>/`, so the daily backup (which tars all of
-`/var/lib/homelab`, see [Backups](#backups)) captures it automatically.
+`/var/lib/homelab`, see [Backups](#backups)) captures it automatically. Only the
+`config.yml` is worth anything on restore — the rest is Actions cache and
+workflow workdirs, regenerated on the next run.
 
-## VoidAuth (single sign-on)
-
-[VoidAuth](https://github.com/voidauth/voidauth) is the single authentication
-tool for every self-hosted service **except the [hardware bench MCP](#hardware-bench-mcp)**
-(which keeps its own basic-auth + token scheme). It runs internal-only like the
-other apps — joins the shared `forgejo` Podman network, publishes no host port,
-and is reached only through Caddy at `https://auth.lab.pacmag.cz`, which is the
-**one site not placed behind the SSO gate** (it *is* the login portal). It stores
-its state in a bundled **SQLite** database (no separate Postgres container) under
-`/var/lib/homelab/voidauth/db`, with config under `…/voidauth/config`.
-
-Two integration mechanisms are used, the right one per service:
-
-- **Caddy `forward_auth`** for the apps with no login of their own — **Glances and
-  Dashy**. Caddy clones each request to VoidAuth's `/api/authz/forward-auth`
-  endpoint (the shared `(voidauth)` snippet in the Caddyfile); VoidAuth allows or
-  redirects to its login page based on its ProxyAuth Domain rules, and on success
-  copies `Remote-User`/`-Email`/`-Name`/`-Groups` onto the request. The gate is
-  binary — it proves you're signed in but the app gains no per-user identity. The
-  session cookie is scoped to `SESSION_DOMAIN=pacmag.cz`, so one login covers every
-  gated host. It must be the registrable apex `pacmag.cz`, not `lab.pacmag.cz`:
-  VoidAuth's "covered by" check only accepts a gated host that is a *strict
-  subdomain* of the session domain, and Dashy sits on the apex `lab.pacmag.cz` —
-  which equals `lab.pacmag.cz` and so is rejected unless the session domain is its
-  parent.
-- **OIDC** for **Forgejo** and **Grist**, which both authenticate users themselves
-  (real per-user accounts) rather than relying on an edge gate. Forgejo *must* use
-  OIDC because its CI runners, git-over-HTTPS, and API all hit `forge.lab.pacmag.cz`
-  with tokens (no session cookie) and a proxy gate would 302-redirect and break
-  them. Grist uses OIDC so each VoidAuth user maps to a real Grist account. Both
-  receive the OIDC callback directly, so their Caddy vhosts are plain
-  `reverse_proxy` — see [Forgejo and TLS](#forgejo-and-tls) and [Grist](#grist).
-
-The only secret in `group_vars` is `voidauth_storage_key` (encrypts secrets at
-rest; `openssl rand -base64 48`), templated into the 0600 file
-`/var/lib/homelab/voidauth/voidauth.env`. The rest of the config (`APP_URL`,
-`SESSION_DOMAIN`, `DB_ADAPTER=sqlite`, …) lives inline in the Quadlet unit.
-
-The VoidAuth admin account, OIDC apps, and ProxyAuth domains (the per-host access
-rules the `forward_auth` gates check) live in VoidAuth's own database and are
-managed in its web UI, not by Ansible.
-
-## Glances
-
-[Glances](https://glances.t470s.lab.pacmag.cz) runs in web-server mode as an
-internal-only container: like Forgejo it shares the private Podman network with
-Caddy and publishes no host port, so its UI is reachable only through Caddy,
-which terminates TLS and reverse-proxies to it on port 61208. It reuses the same
-shared `wedos_tls` snippet in the Caddyfile, so issuance works the same way as
-for Forgejo — the only prerequisite is the A record
-`glances.t470s.lab.pacmag.cz → 192.168.88.254` (table above). No new router
-forward is needed: client access rides the existing `443` rule.
-
-The container runs with `--pid=host` so Glances reports the host's processes and
-load rather than just its own container. Glances' web UI exposes only read-only
-stats — its REST API has no process-kill or command-execution endpoint (killing
-processes is a feature of the terminal UI only). The real exposure is
-information disclosure: with `--pid=host` the process list shows every host
-process's full command line, which routinely leaks secrets passed as CLI args.
-
-Glances has **no authentication of its own**, so Caddy gates the site with
-[VoidAuth](#voidauth-single-sign-on) SSO (the shared `(voidauth)` `forward_auth`
-snippet in the Caddyfile) — no per-service credential lives in Caddy.
-
-## Dashy
-
-[Dashy](https://lab.pacmag.cz) is a static service dashboard linking to the
-other lab services. Like Forgejo and Glances it runs internal-only: it joins the
-shared private Podman network with Caddy and publishes no host port, so its UI is
-reachable only through Caddy, which terminates TLS and reverse-proxies to it on
-port 8080. It reuses the same shared `wedos_tls` snippet in the Caddyfile, so
-issuance works the same way as for the other sites — the only prerequisite is the
-A record `lab.pacmag.cz → 192.168.88.254` (table above). No new router forward is
-needed: client access rides the existing `443` rule.
-
-Dashy has no login of its own; like Glances it's gated at the edge by
-[VoidAuth](#voidauth-single-sign-on) SSO (the shared `(voidauth)` `forward_auth`
-snippet).
-
-The dashboard is declarative: its tile layout lives in
-`ansible/files/dashy/conf.yml` and is copied to the host (no secrets, so it is
-checked into the repo rather than templated from `group_vars`). Edit that file
-and re-run `deploy_services_containerized_applications.yml` to change the tiles; Ansible restarts the
-container so Dashy reloads the config.
-
-## Grist
-
-[Grist](https://grist.lab.pacmag.cz) is a self-hosted spreadsheet/database. Like
-the other apps it runs internal-only: it joins the shared private Podman network
-with Caddy and publishes no host port, so its UI is reachable only through Caddy,
-which terminates TLS and reverse-proxies to it on port 8484. It reuses the shared
-`wedos_tls` snippet, so issuance works like the other sites — the only
-prerequisite is the A record `grist.lab.pacmag.cz → 192.168.88.254` (table above).
-No new router forward is needed: access rides the existing `443` rule.
-
-Grist authenticates users itself via **OIDC against [VoidAuth](#voidauth-single-sign-on)**
-(per-user accounts), so — unlike Glances/Dashy — it sits behind a plain
-`reverse_proxy`, not the `forward_auth` gate: it must receive the OIDC callback at
-`/oauth2/callback`. `GRIST_FORCE_LOGIN=true` redirects any anonymous browser hit to
-the VoidAuth login; API clients' `Authorization: Bearer <api-key>` is validated by
-Grist directly. The OIDC config lives in the Quadlet (`GRIST_OIDC_IDP_ISSUER` =
-`https://auth.lab.pacmag.cz/oidc`, `GRIST_OIDC_IDP_CLIENT_ID=grist`,
-`GRIST_OIDC_SP_HOST=https://grist.lab.pacmag.cz`); the client secret
-(`grist_oidc_client_secret`) is templated from `group_vars` into the 0600
-`grist.env`. `GRIST_OIDC_SP_IGNORE_EMAIL_VERIFIED=true` because VoidAuth runs
-without SMTP and so asserts no verified-email claim. `GRIST_DEFAULT_EMAIL` stays
-`p.horacek94@gmail.com`: it owns the existing documents, and logging in via OIDC
-with that same email lands on that account, so ownership carries over with no data
-migration. It needs the matching Grist OIDC App in VoidAuth (redirect URI
-`https://grist.lab.pacmag.cz/oauth2/callback`, client id `grist`). Grist's Python
-data engine runs with
-`GRIST_SANDBOX_FLAVOR=unsandboxed` (set in the Quadlet) because gVisor — the image
-default — needs extra privileges (`SYS_PTRACE` + unconfined seccomp) under rootful
-Podman; unsandboxed is acceptable for this trusted homelab instance.
-
-Documents persist under the host bind mount `/var/lib/homelab/grist/data` (mounted
-at `/persist`), so they are picked up by the daily backup automatically. The
-gristlabs image runs as the in-image `grist` user (uid/gid 1001), so the playbook
-owns that dir 1001:1001 — otherwise Grist can't write its SQLite DBs and fails with
-`SQLITE_READONLY`. The
-session secret that signs Grist's cookies (`grist_session_secret`) is templated
-from `group_vars` into the 0600 file `/var/lib/homelab/grist/grist.env`, which the
-container reads via `EnvironmentFile` — it is never committed to the Quadlet unit.
-
-## Syncthing
-
-[Syncthing](https://syncthing.lab.pacmag.cz) is continuous file synchronization. It
-has two distinct traffic planes, handled differently:
-
-- **Web GUI / REST API (port 8384)** runs internal-only like the other apps: it
-  joins the shared private Podman network with Caddy, publishes no host port, and
-  is reachable only through Caddy on `https://syncthing.lab.pacmag.cz`. The only
-  prerequisite is the A record `syncthing.lab.pacmag.cz → 192.168.88.254` (table
-  above); access rides the existing `443` rule. The image binds the GUI to
-  `127.0.0.1` by default, so the Quadlet sets `STGUIADDRESS=0.0.0.0:8384` to make
-  it reachable from the proxy. The GUI is gated at the edge by
-  **[VoidAuth](#voidauth-single-sign-on)** via the shared `forward_auth` snippet
-  (like Glances/Dashy) — Syncthing's GUI has no per-user OIDC, and its UI exposes
-  every synced folder path and device key, so it must not sit open on the network.
-- **Sync protocol (BEP)** is raw TCP/UDP, not HTTP, so it cannot go through Caddy.
-  It is published directly on the host: **22000/tcp + 22000/udp** for
-  device-to-device transfer and **21027/udp** for LAN peer discovery — analogous to
-  Forgejo's SSH on host port 2222. Because sync never touches Caddy, the VoidAuth
-  GUI gate does not (and cannot) interfere with synchronization. To sync with
-  devices outside the lab LAN, forward host port 22000 (tcp+udp) on the router;
-  otherwise Syncthing falls back to its global relays.
-
-All state — config, the TLS device keys/ID, the index database, and the synced
-folders — lives under the single host bind mount `/var/lib/homelab/syncthing`
-(mounted at `/var/syncthing`), so it is picked up by the daily backup
-automatically. The official image runs syncthing as uid/gid 1000 (`PUID`/`PGID`),
-so the playbook owns that dir 1000:1000 or syncthing can't write its keys and
-database. No secrets are templated — the GUI is gated by VoidAuth rather than a
-committed password.
+The registration `uuid`/`token` pairs in `group_vars/server.yml` are checked
+against `action_runner` rows in the forge's `gitea.db`, which lives on the
+OptiPlex. Restoring one host without the other leaves the runners unregistered
+and they have to be re-created in the forge's admin UI.
 
 ## Backups
 
@@ -489,24 +318,24 @@ All persistent service state lives in host bind mounts under
 data into a dated archive under `/var/backups/homelab/`
 (`homelab-YYYY-MM-DD.tar.gz`) and prunes archives older than **14 days**.
 
-What's captured: Caddy's issued certs and ACME state (`caddy/data`,
-`caddy/config`), the Caddyfile and the 0600 secret env files (`wedos.env`,
-`ramus-mcp.env`), VoidAuth's SQLite database and config (`voidauth/db`,
-`voidauth/config` — including the user/OIDC-app/ProxyAuth state and the
-`voidauth.env` storage key), Forgejo's `gitea.db` and metadata (`forgejo/gitea`),
-its git repositories (`forgejo/git`) and runtime data (`forgejo/var`), the Dashy
-config, and Grist's documents and session secret (`grist/data`, `grist/grist.env`),
-and Syncthing's config, device keys/ID, index database, and synced folders
-(`syncthing/`). The transient Caddy build dir (`caddy/build`) is excluded — it's rebuilt from the
-repo on every `deploy_services_caddy.yml` run, and Glances has no persistent state.
-The backup destination is mode `0700` because the archives contain those 0600
-secrets.
+What's worth capturing here is small: Caddy's issued certs and ACME state
+(`caddy/data`, `caddy/config`), the Caddyfile and the 0600 secret env files
+(`wedos.env`, `ramus-mcp.env`), and the runners' `config.yml` files. Of each
+runner's directory only the `config.yml` matters on restore — the rest is Actions
+cache and workflow workdirs, regenerated on the next run.
 
-The backup is a **live copy**: it tars the data while the containers run, so
-there's no downtime, but a Forgejo SQLite snapshot taken mid-write could in
-principle be inconsistent. For a low-traffic personal forge backed up at 04:00
-this is an acceptable risk; if it ever matters, switch the script to
-`forgejo dump` or briefly stop the containers around the copy.
+The tar takes all of `/var/lib/homelab`, so any leftover service directory under
+it is swept into every archive; delete what is no longer in use rather than
+paying for it daily against the 14-day retention.
+
+The transient Caddy build dir (`caddy/build`) is excluded — it's rebuilt from the
+repo on every `deploy_services_caddy.yml` run. The backup destination is mode
+`0700` because the archives contain those 0600 secrets.
+
+The backup is a **live copy**: it tars the data while the services run, so
+there's no downtime. Nothing on this host writes a database during the 04:00 run;
+if that ever changes, stop the service around the copy rather than hoping — a
+torn SQLite file looks like a perfectly good archive until you need it.
 
 Trigger a backup on demand and inspect it with:
 
@@ -518,13 +347,13 @@ systemctl list-timers homelab-backup.timer    # next scheduled run
 
 To **restore**, stop the containers, extract an archive over the root
 filesystem (`tar -p` restores the original ownership and modes, including the
-uid/gid 1000 Forgejo dirs and the 0600 secrets), then start the containers
+uid/gid 1000 runner dirs and the 0600 secrets), then start the containers
 again:
 
 ```sh
-systemctl stop caddy.service voidauth.service forgejo.service glances.service dashy.service grist.service
+systemctl stop caddy.service 'forgejo-runner-*'
 tar -xzpf /var/backups/homelab/homelab-YYYY-MM-DD.tar.gz -C /
-systemctl start caddy.service voidauth.service forgejo.service glances.service dashy.service grist.service
+systemctl start caddy.service 'forgejo-runner-*'
 ```
 
 ## Remote access

@@ -1,0 +1,5 @@
+[Unit]
+Description=Internal network shared by Caddy and the services it fronts
+
+[Network]
+NetworkName=homelab

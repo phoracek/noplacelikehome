@@ -1,23 +1,23 @@
 ---
 # Caddy — the shared TLS ingress that every internal service sits behind. Pulled
-# out of deploy_services_containerized_applications.yml because Caddy is a different layer from the apps:
-# one reverse proxy fronts everything this host serves (currently the ramus-mcp
-# host service), terminating TLS and routing by hostname. Keeping it separate
-# means an app deploy doesn't rebuild/restart the proxy, and the proxy can be
-# (re)deployed on its own.
+# out of deploy_services_containerized_applications.yml because Caddy is a
+# different layer from the apps: one reverse proxy fronts all of them,
+# terminating TLS and routing by hostname. Keeping it separate means an app
+# deploy doesn't rebuild/restart the proxy, and the proxy can be (re)deployed on
+# its own.
 #
 # Runs LAST among the service playbooks (see deploy_services.yml): every backend
-# must be up before the ingress starts forwarding to it. In particular the
-# ramus-mcp host service must already be running so its DNS-rebinding allowlist
-# trusts the public hostname before Caddy forwards the real Host header.
+# must be up before the ingress starts forwarding to it.
 #
-# Prerequisite: the shared `forgejo` podman network (installed + started by
-# deploy_services_containerized_applications.yml). Caddy joins it to reach the containerised backends; its
-# Quadlet unit declares the dependency, so a daemon-reload here will pull the
-# network up as long as deploy_services_containerized_applications.yml has installed the network unit.
+# Prerequisite: the shared `homelab` podman network (installed + started by
+# deploy_services_containerized_applications.yml). Caddy joins it to reach the
+# containerised backends; its Quadlet unit declares the dependency, so a
+# daemon-reload here will pull the network up as long as the apps play has
+# installed the network unit.
 #
-# The routing table is still a single Caddyfile (files/caddy/Caddyfile) listing
-# every service's vhost — this play owns that file and Caddy's image/secrets.
+# The routing table is a single Caddyfile (files/caddy/Caddyfile) listing every
+# service's vhost — this play owns that file, Caddy's image, its secrets, and
+# the firewall ports it publishes on.
 - name: Deploy Caddy reverse proxy (shared TLS ingress)
   hosts: server
   become: yes
@@ -36,8 +36,22 @@
         group: root
         mode: "0755"
       loop:
+        - /var/lib/homelab/caddy
         - /var/lib/homelab/caddy/data
         - /var/lib/homelab/caddy/config
+
+    # The published ports belong to Caddy, not to generic host prep — it is the
+    # only thing on this host that binds them, and they'd be dead holes in the
+    # firewall without it.
+    - name: Open ports 80 and 443 for Caddy
+      ansible.posix.firewalld:
+        port: "{{ item }}"
+        permanent: true
+        immediate: true
+        state: enabled
+      loop:
+        - 80/tcp
+        - 443/tcp
 
     # --- Custom Caddy image (bundles the vendored WEDOS DNS provider) ---
     - name: Ensure Caddy build directory exists
@@ -85,21 +99,10 @@
       notify: Restart caddy
 
     # --- Caddy runtime config + secrets ---
-    # These env files carry per-service auth Caddy enforces at the edge; they live
-    # with Caddy (the enforcer), templated from the gitignored group_vars.
     - name: Deploy WEDOS WAPI environment file
       ansible.builtin.template:
         src: templates/caddy/wedos.env.j2
         dest: /var/lib/homelab/caddy/wedos.env
-        owner: root
-        group: root
-        mode: "0600"
-      notify: Restart caddy
-
-    - name: Deploy ramus-mcp basic-auth environment file
-      ansible.builtin.template:
-        src: templates/caddy/ramus-mcp.env.j2
-        dest: /var/lib/homelab/caddy/ramus-mcp.env
         owner: root
         group: root
         mode: "0600"

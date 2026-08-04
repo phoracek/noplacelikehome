@@ -1,0 +1,32 @@
+---
+- name: Create ansible user with sudo privileges
+  hosts: server
+  become: yes
+  tasks:
+    - name: Create a new user
+      user:
+        name: ansible
+        shell: /bin/bash
+        state: present
+
+    - name: Copy the keys
+      authorized_key:
+        user: ansible
+        state: present
+        manage_dir: yes
+        key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
+
+    - name: Add user to sudo group
+      user:
+        name: ansible
+        groups: wheel
+        append: yes
+
+    - name: Allow passwordless sudo for the user
+      lineinfile:
+        path: /etc/sudoers.d/ansible
+        state: present
+        line: 'ansible ALL=(ALL) NOPASSWD:ALL'
+        create: yes
+        mode: '0440'
+        validate: '/usr/sbin/visudo -cf %s'

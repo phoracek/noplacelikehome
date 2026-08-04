@@ -9,7 +9,7 @@ ContainerName=dashy
 # Web UI is internal-only: it joins the shared network with Caddy and publishes
 # no host port, reachable only via Caddy at https://lab.pacmag.cz. Dashy serves
 # on port 8080 inside the container.
-Network=forgejo.network
+Network=homelab.network
 # Declarative dashboard config (no secrets), copied to the host by Ansible from
 # ansible/files/dashy/conf.yml.
 Volume=/var/lib/homelab/dashy/conf.yml:/app/user-data/conf.yml:Z

@@ -8,32 +8,31 @@ Image=docker.io/gristlabs/grist:latest
 ContainerName=grist
 # Web UI is internal-only: it joins the shared network with Caddy and publishes
 # no host port, reachable only via Caddy at https://grist.lab.pacmag.cz. Grist
-# serves on port 8484 inside the container (single-port mode). Grist authenticates
-# users itself via OIDC against VoidAuth (below), so Caddy just reverse-proxies it
-# — no edge forward_auth gate, unlike Glances/Dashy.
-Network=forgejo.network
+# serves on port 8484 inside the container (single-port mode).
+Network=homelab.network
 # Persistent documents + home DB live under /persist. Podman won't create the
 # bind-mount source, so Ansible makes /var/lib/homelab/grist/data first.
 Volume=/var/lib/homelab/grist/data:/persist:Z
 # GRIST_SESSION_SECRET (signs session cookies) and GRIST_OIDC_IDP_CLIENT_SECRET
-# (the VoidAuth OIDC client secret) are secrets, so they're templated by Ansible
-# from the gitignored group_vars/server.yml into this 0600 env file rather than
-# committed inline here.
+# (the VoidAuth OIDC client secret) are secrets, so Ansible templates them from
+# the gitignored group_vars/server.yml into this 0600 env file.
 EnvironmentFile=/var/lib/homelab/grist/grist.env
 Environment=APP_HOME_URL=https://grist.lab.pacmag.cz/
 # Per-user login via OIDC against VoidAuth. The issuer is VoidAuth's provider mount
 # (APP_URL + /oidc); Grist discovers endpoints at <issuer>/.well-known/openid-configuration
-# and registers redirect_uri <SP_HOST>/oauth2/callback. GRIST_FORCE_LOGIN sends any
-# anonymous hit to the OIDC login. The client secret is in the env file above.
+# and registers redirect_uri <SP_HOST>/oauth2/callback, which must match the Grist
+# OIDC App registered in VoidAuth. GRIST_FORCE_LOGIN sends any anonymous hit to
+# the OIDC login. VoidAuth is reached by public URL rather than at voidauth:3000
+# because the issuer string is what both ends compare against.
+#
 # IGNORE_EMAIL_VERIFIED because VoidAuth runs without SMTP, so it doesn't assert a
 # verified-email claim — fine for this single-trusted-IdP homelab.
 Environment=GRIST_OIDC_IDP_ISSUER=https://auth.lab.pacmag.cz/oidc
 Environment=GRIST_OIDC_IDP_CLIENT_ID=grist
 Environment=GRIST_OIDC_SP_HOST=https://grist.lab.pacmag.cz
 Environment=GRIST_OIDC_SP_IGNORE_EMAIL_VERIFIED=true
-# Existing documents are owned by this email; logging in via OIDC with the same
-# address (the VoidAuth user's email) lands on that account, so ownership and all
-# existing docs carry over. Also designates the Grist install admin.
+# Owns the existing documents and designates the Grist install admin; an OIDC
+# login with this same address lands on that account.
 Environment=GRIST_DEFAULT_EMAIL=p.horacek94@gmail.com
 Environment=GRIST_FORCE_LOGIN=true
 # Run the Python data-engine unsandboxed: gVisor (the image default) needs extra
