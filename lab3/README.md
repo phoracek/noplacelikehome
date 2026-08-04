@@ -13,7 +13,8 @@ Let's Encrypt via ACME DNS-01.
                              ├──▶ lab.pacmag.cz          ──▶ dashy:8080     ┐ gated by
                              ├──▶ glances.lab.pacmag.cz  ──▶ glances:61208  ┘ forward_auth
                              ├──▶ grist.lab.pacmag.cz    ──▶ grist:8484      (own OIDC login)
-                             └──▶ forge.lab.pacmag.cz    ──▶ forgejo:3000    (own OIDC login)
+                             ├──▶ forge.lab.pacmag.cz    ──▶ forgejo:3000    (own OIDC login)
+                             └──▶ clouds.lab.pacmag.cz   ──▶ clouds-…-server:80  (open, http + https)
       :2222 ─────────────────────▶ forgejo (git over SSH — raw TCP, can't be proxied)
 ```
 
@@ -22,8 +23,8 @@ publish no host ports of their own — only Caddy binds 80 and 443. Everything
 runs as rootful Podman containers defined as systemd Quadlet units
 (`quadlet/*.container`); Ansible copies them to the host and starts them.
 
-The `lab/` stack — Home Assistant, Zigbee2MQTT, Mosquitto, Clouds over
-Czechoslovakia — also runs on this host, on published ports outside Caddy.
+The `lab/` stack — Home Assistant, Zigbee2MQTT, Mosquitto — also runs on this
+host, on published ports outside Caddy.
 
 ## Services
 
@@ -35,6 +36,8 @@ Czechoslovakia — also runs on this host, on published ports outside Caddy.
 | `dashy.service`    | <https://lab.pacmag.cz> | Service dashboard (no login of its own — gated by VoidAuth) |
 | `grist.service`    | <https://grist.lab.pacmag.cz> | Spreadsheet / database (logs users in itself, via OIDC against VoidAuth) |
 | `forgejo.service`  | <https://forge.lab.pacmag.cz> | Git forge, container registry and CI (logs users in itself, via OIDC against VoidAuth). Also binds host port 2222 for git-over-SSH |
+| `clouds-over-czechoslovakia-server.service` | <https://clouds.lab.pacmag.cz> | Satellite cloud cover, served by nginx. Ungated, and also served over plain HTTP — an ESP32 e-ink display polls it and can't do TLS or log in |
+| `clouds-over-czechoslovakia.service` | — | Regenerates those artifacts; runs once per firing of `clouds-over-czechoslovakia.timer` (every 10 min), not at boot |
 
 Every hostname above is an A record pointing at `192.168.0.252`. Forgejo's two
 Actions runners run on the T470s (`../lab2`) and reach the forge over HTTPS.

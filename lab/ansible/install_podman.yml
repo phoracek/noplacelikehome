@@ -61,7 +61,6 @@
         - /var/lib/homelab
         - /var/lib/homelab/homeassistant
         - /var/lib/homelab/zigbee2mqtt
-        - /var/lib/homelab/clouds-over-czechoslovakia
         - /var/lib/homelab/mosquitto
         - /var/lib/homelab/mosquitto/config
         - /var/lib/homelab/mosquitto/data
@@ -134,7 +133,6 @@
       loop:
         - 8123/tcp
         - 8124/tcp
-        - 8125/tcp
 
     - name: Allow mDNS through firewalld so home.local resolves on the LAN
       ansible.posix.firewalld:

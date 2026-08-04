@@ -8,12 +8,20 @@
   # backends both join — it must exist first, so it lives with the backends.
   vars:
     quadlet_dir: /etc/containers/systemd
+    systemd_dir: /etc/systemd/system
     container_units:
       - voidauth
       - glances
       - dashy
       - grist
       - forgejo
+      - clouds-over-czechoslovakia-server
+    # Installed like the units above but never started or restarted by this play:
+    # they run once and exit, driven by the timers below.
+    oneshot_units:
+      - clouds-over-czechoslovakia
+    systemd_timers:
+      - clouds-over-czechoslovakia
   tasks:
     # Podman won't create bind-mount sources, so every service's data dirs have
     # to exist before its unit starts. These tasks only guarantee the directory;
@@ -109,6 +117,15 @@
         - /var/lib/homelab/forgejo/git
         - /var/lib/homelab/forgejo/var
 
+    # Written by the generator container, served read-only by the nginx one.
+    - name: Ensure Clouds over Czechoslovakia data directory exists
+      ansible.builtin.file:
+        path: /var/lib/homelab/clouds-over-czechoslovakia
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
     # Git over SSH is raw TCP, so it cannot be proxied by Caddy the way the web
     # UI is — Forgejo's built-in SSH server publishes host port 2222 directly and
     # needs its own hole in the firewall. It belongs to this play rather than to
@@ -138,8 +155,18 @@
         owner: root
         group: root
         mode: "0644"
-      loop: "{{ container_units }}"
+      loop: "{{ container_units + oneshot_units }}"
       register: quadlet_files
+      notify: Reload systemd
+
+    - name: Install systemd timer units
+      ansible.builtin.copy:
+        src: "files/systemd/{{ item }}.timer"
+        dest: "{{ systemd_dir }}/{{ item }}.timer"
+        owner: root
+        group: root
+        mode: "0644"
+      loop: "{{ systemd_timers }}"
       notify: Reload systemd
 
     # Run the pending daemon-reload before starting units, so systemd sees the
@@ -164,9 +191,16 @@
         name: "{{ item.item }}.service"
         state: restarted
       loop: "{{ quadlet_files.results }}"
-      when: item.changed
+      when: item.changed and item.item in container_units
       loop_control:
         label: "{{ item.item }}"
+
+    - name: Enable and start systemd timers
+      ansible.builtin.systemd_service:
+        name: "{{ item }}.timer"
+        state: started
+        enabled: true
+      loop: "{{ systemd_timers }}"
 
   handlers:
     - name: Reload systemd

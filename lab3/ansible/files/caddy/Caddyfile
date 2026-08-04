@@ -95,6 +95,22 @@ grist.lab.pacmag.cz {
 	reverse_proxy grist:8484
 }
 
+clouds.lab.pacmag.cz {
+	import wedos_tls
+	# Not gated: the only regular consumer is an ESP32 e-ink display polling
+	# timestamp.txt and view-dithered.bitmap, and it can neither hold a session
+	# nor log in. The content is a public satellite image.
+	reverse_proxy clouds-over-czechoslovakia-server:80
+}
+
+# Same site in plaintext on port 80, for that display: validating the Let's
+# Encrypt certificate would need a CA bundle and a synced clock on the device.
+# Declaring the http:// site explicitly also replaces Caddy's automatic
+# http->https redirect for this one name.
+http://clouds.lab.pacmag.cz {
+	reverse_proxy clouds-over-czechoslovakia-server:80
+}
+
 forge.lab.pacmag.cz {
 	import wedos_tls
 	# Not behind the forward_auth gate: the CI runners, git-over-HTTPS, the

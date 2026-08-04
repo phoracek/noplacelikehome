@@ -1,0 +1,20 @@
+[Unit]
+Description=Clouds over Czechoslovakia (regenerate artifacts)
+
+[Container]
+Image=ghcr.io/phoracek/clouds-over-czechoslovakia:latest
+ContainerName=clouds-over-czechoslovakia
+# Shared with the nginx container that serves the result, so the SELinux label
+# must be shared (:z) rather than private (:Z) — :Z here would relabel the tree
+# out from under the server.
+Volume=/var/lib/homelab/clouds-over-czechoslovakia:/opt/artifacts:z
+# Joins no network: it only fetches from EUMETSAT over the internet and writes
+# files. Nothing in the lab talks to it.
+Entrypoint=/opt/clouds/entrypoint.sh
+Exec=/opt/artifacts
+AutoUpdate=registry
+
+[Service]
+# Run once and exit — driven by clouds-over-czechoslovakia.timer, not started at
+# boot. Fetching and dithering the satellite image takes a while.
+TimeoutStartSec=10min
