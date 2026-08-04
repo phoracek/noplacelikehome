@@ -1,0 +1,5 @@
+// What dpkg-reconfigure -plow unattended-upgrades would write: refresh the
+// package lists and run unattended-upgrade once a day (via apt-daily.timer
+// and apt-daily-upgrade.timer).
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
