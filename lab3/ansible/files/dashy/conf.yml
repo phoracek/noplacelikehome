@@ -54,6 +54,20 @@ sections:
         target: newtab
         statusCheckUrl: https://clouds.lab.pacmag.cz/view-dithered.png
 
+      - title: Home Assistant
+        description: Home automation
+        icon: hl-home-assistant
+        url: https://home.lab.pacmag.cz
+        target: newtab
+        statusCheckUrl: https://home.lab.pacmag.cz
+
+      - title: Zigbee2MQTT
+        description: Zigbee bridge
+        icon: hl-zigbee2mqtt
+        url: https://zigbee.lab.pacmag.cz
+        target: newtab
+        statusCheckUrl: https://zigbee.lab.pacmag.cz
+
       # The one tile here that isn't proxied: the router is a physical box on the
       # LAN with its own admin UI, so it keeps its plain http://kabelbox.local URL.
       - title: Home router
@@ -61,22 +75,3 @@ sections:
         icon: fas fa-network-wired
         url: http://kabelbox.local
         target: newtab
-
-  # Served by lab/ on this same machine: no TLS, no hostname, one published port
-  # each, reachable only from the LAN.
-  - name: Home
-    icon: fas fa-home
-    items:
-      - title: Home Assistant
-        description: Home automation
-        icon: hl-home-assistant
-        url: http://home.local:8123
-        target: newtab
-        statusCheckUrl: http://home.local:8123
-
-      - title: Zigbee2MQTT
-        description: Zigbee bridge
-        icon: hl-zigbee2mqtt
-        url: http://home.local:8124
-        target: newtab
-        statusCheckUrl: http://home.local:8124

@@ -16,6 +16,9 @@
       - grist
       - forgejo
       - clouds-over-czechoslovakia-server
+      - mosquitto
+      - zigbee2mqtt
+      - homeassistant
     # Installed like the units above but never started or restarted by this play:
     # they run once and exit, driven by the timers below.
     oneshot_units:
@@ -126,6 +129,92 @@
         group: root
         mode: "0755"
 
+    # Home Assistant keeps everything in one config directory; it runs as root in
+    # the container, so no ownership fixup is needed. configuration.yaml and the
+    # rest of the tree are edited through the UI and are NOT managed from here.
+    - name: Ensure Home Assistant config directory exists
+      ansible.builtin.file:
+        path: /var/lib/homelab/homeassistant
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Ensure Mosquitto data directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop:
+        - /var/lib/homelab/mosquitto
+        - /var/lib/homelab/mosquitto/config
+
+    - name: Install Mosquitto configuration
+      ansible.builtin.copy:
+        src: files/mosquitto/mosquitto.conf
+        dest: /var/lib/homelab/mosquitto/config/mosquitto.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart mosquitto
+
+    # The broker drops to uid/gid 1883 inside the container, so it can only write
+    # its persistence DB and log if the host directories are owned by 1883.
+    - name: Ensure Mosquitto data and log directories exist (owned by the mosquitto uid)
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "1883"
+        group: "1883"
+        mode: "0755"
+      loop:
+        - /var/lib/homelab/mosquitto/data
+        - /var/lib/homelab/mosquitto/log
+      notify: Restart mosquitto
+
+    - name: Ensure Zigbee2MQTT data directory exists
+      ansible.builtin.file:
+        path: /var/lib/homelab/zigbee2mqtt
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    # `force: false` — this only seeds a first install, skipping the v2 onboarding
+    # wizard. Zigbee2MQTT rewrites this file itself (pairings, network key), so
+    # after the first deploy the host copy is the source of truth and overwriting
+    # it would drop the network.
+    - name: Seed Zigbee2MQTT configuration
+      ansible.builtin.copy:
+        src: files/zigbee2mqtt/configuration.yaml
+        dest: /var/lib/homelab/zigbee2mqtt/configuration.yaml
+        owner: root
+        group: root
+        mode: "0644"
+        force: false
+      notify: Restart zigbee2mqtt
+
+    # Gives the Zigbee dongle a stable /dev/zigbee symlink and a group the
+    # container can open.
+    - name: Install udev rule for the Zigbee dongle
+      ansible.builtin.copy:
+        src: files/udev/99-zigbee.rules
+        dest: /etc/udev/rules.d/99-zigbee.rules
+        owner: root
+        group: root
+        mode: "0644"
+      register: zigbee_udev
+
+    - name: Reload udev rules
+      ansible.builtin.command: udevadm control --reload-rules
+      when: zigbee_udev.changed
+
+    - name: Trigger udev for the tty subsystem
+      ansible.builtin.command: udevadm trigger --subsystem-match=tty
+      when: zigbee_udev.changed
+
     # Git over SSH is raw TCP, so it cannot be proxied by Caddy the way the web
     # UI is — Forgejo's built-in SSH server publishes host port 2222 directly and
     # needs its own hole in the firewall. It belongs to this play rather than to
@@ -226,5 +315,17 @@
     - name: Restart grist
       ansible.builtin.systemd_service:
         name: grist.service
+        state: restarted
+      failed_when: false
+
+    - name: Restart mosquitto
+      ansible.builtin.systemd_service:
+        name: mosquitto.service
+        state: restarted
+      failed_when: false
+
+    - name: Restart zigbee2mqtt
+      ansible.builtin.systemd_service:
+        name: zigbee2mqtt.service
         state: restarted
       failed_when: false

@@ -14,7 +14,9 @@ Let's Encrypt via ACME DNS-01.
                              ├──▶ glances.lab.pacmag.cz  ──▶ glances:61208  ┘ forward_auth
                              ├──▶ grist.lab.pacmag.cz    ──▶ grist:8484      (own OIDC login)
                              ├──▶ forge.lab.pacmag.cz    ──▶ forgejo:3000    (own OIDC login)
-                             └──▶ clouds.lab.pacmag.cz   ──▶ clouds-…-server:80  (open, http + https)
+                             ├──▶ clouds.lab.pacmag.cz   ──▶ clouds-…-server:80  (open, http + https)
+                             ├──▶ home.lab.pacmag.cz     ──▶ host:8123       (own login)
+                             └──▶ zigbee.lab.pacmag.cz   ──▶ host:8124       (open)
       :2222 ─────────────────────▶ forgejo (git over SSH — raw TCP, can't be proxied)
 ```
 
@@ -23,8 +25,16 @@ publish no host ports of their own — only Caddy binds 80 and 443. Everything
 runs as rootful Podman containers defined as systemd Quadlet units
 (`quadlet/*.container`); Ansible copies them to the host and starts them.
 
-The `lab/` stack — Home Assistant, Zigbee2MQTT, Mosquitto — also runs on this
-host, on published ports outside Caddy.
+Three units are the exception and run with `Network=host`: Home Assistant needs
+the host's interfaces for SSDP/mDNS discovery and Bluetooth, Zigbee2MQTT needs
+the USB dongle, and Mosquitto is the broker they both dial on
+`127.0.0.1:1883`. Having no container name to resolve, they are reached from
+Caddy through the bridge gateway (`host.containers.internal`) instead. Their
+ports are not open in the firewall, so the only way in from the LAN is Caddy.
+
+MQTT itself is not proxied — it is raw TCP, not HTTP, and this Caddy has no
+layer 4 module. The broker listens on loopback only and is reachable just by the
+two services on this host.
 
 ## Services
 
@@ -38,9 +48,18 @@ host, on published ports outside Caddy.
 | `forgejo.service`  | <https://forge.lab.pacmag.cz> | Git forge, container registry and CI (logs users in itself, via OIDC against VoidAuth). Also binds host port 2222 for git-over-SSH |
 | `clouds-over-czechoslovakia-server.service` | <https://clouds.lab.pacmag.cz> | Satellite cloud cover, served by nginx. Ungated, and also served over plain HTTP — an ESP32 e-ink display polls it and can't do TLS or log in |
 | `clouds-over-czechoslovakia.service` | — | Regenerates those artifacts; runs once per firing of `clouds-over-czechoslovakia.timer` (every 10 min), not at boot |
+| `homeassistant.service` | <https://home.lab.pacmag.cz> | Home automation (logs users in itself). Host network |
+| `zigbee2mqtt.service` | <https://zigbee.lab.pacmag.cz> | Zigbee bridge. Host network, owns the USB dongle. **No login of its own** — see the note below |
+| `mosquitto.service` | `127.0.0.1:1883` | MQTT broker between the two. Host network, loopback only, no web UI to proxy |
 
 Every hostname above is an A record pointing at `192.168.0.252`. Forgejo's two
 Actions runners run on the T470s (`../lab2`) and reach the forge over HTTPS.
+
+Zigbee2MQTT's frontend is served over TLS but is **not** gated by VoidAuth and
+has no password, so anyone who can resolve the name can pair devices and rewrite
+the Zigbee network. Its own `frontend.auth_token` setting in
+`/var/lib/homelab/zigbee2mqtt/configuration.yaml` is the fix if that matters
+later; `import voidauth` in the Caddyfile is the other.
 
 ## Deploy
 
@@ -53,11 +72,12 @@ ansible-galaxy collection install -r requirements.yml
 ansible-playbook -i inventory.file -u admin   -K create_ansible_user.yml
 ansible-playbook -i inventory.file -u ansible    update_dnf_packages.yml
 ansible-playbook -i inventory.file -u ansible    install_dnf_automatic.yml
+ansible-playbook -i inventory.file -u ansible    configure_network.yml
 ansible-playbook -i inventory.file -u ansible    install_podman.yml
 ansible-playbook -i inventory.file -u ansible    deploy_services.yml
 ```
 
-The first four are host setup and only need re-running to change the host itself.
+The first five are host setup and only need re-running to change the host itself.
 `deploy_services.yml` is the entry point for the stack: it deploys the
 containerised backends and the shared network first, then Caddy last, so no vhost
 forwards to a backend that isn't up yet. Each imported playbook also runs on its
@@ -67,7 +87,8 @@ own.
 
 ```sh
 # Status
-sudo systemctl status caddy voidauth glances dashy grist forgejo
+sudo systemctl status caddy voidauth glances dashy grist forgejo \
+                     homeassistant zigbee2mqtt mosquitto
 
 # Logs (certificate issuance lives in Caddy's journal)
 sudo journalctl -u caddy -f
@@ -95,6 +116,83 @@ There is no backup playbook here yet.
    `192.168.0.252` in the WEDOS zone. Services with no login of their own get
    gated at the edge with `import voidauth`; ones that speak OIDC register a
    client in VoidAuth instead and are proxied plain (Grist and Forgejo).
+
+## Home Assistant
+
+The host also advertises itself as `home.local` over mDNS (`avahi-daemon`), which
+is how devices on the LAN find it. That is separate from the `home.lab.pacmag.cz`
+vhost, which is the way in for browsers and the companion apps.
+
+`configuration.yaml` and the rest of `/var/lib/homelab/homeassistant/` are edited
+through the UI and are **not** managed by Ansible. One part of it is load-bearing
+for the ingress: the `http:` block lists the Podman bridge in `trusted_proxies`,
+without which Home Assistant rejects everything Caddy forwards.
+
+### First-time configuration
+
+1. Open <https://home.lab.pacmag.cz> and complete the onboarding wizard.
+2. Open <https://zigbee.lab.pacmag.cz> and pair devices from there.
+3. Add the **MQTT** integration (Settings → Devices & services → Add
+   integration → MQTT). Broker `127.0.0.1`, port `1883`, no credentials. Use the
+   IPv4 literal — `localhost` resolves to `::1` first and Mosquitto only listens
+   on IPv4 loopback. Zigbee2MQTT's discovery then publishes every paired device
+   into Home Assistant automatically.
+
+### Zigbee dongle firmware
+
+The Sonoff Plus V2 here ships EmberZNet 6.x (EZSP v8). Z2M v2 dropped its legacy
+`ezsp` driver, so `quadlet/zigbee2mqtt.container` is pinned to
+`koenkk/zigbee2mqtt:1.42.0` — the last 1.x release that still ships it. Don't
+raise that pin without first flashing the dongle to EmberZNet 7.x via
+<https://darkxst.github.io/silabs-firmware-builder/> (pick **Sonoff ZBDongle-E
+NCP**, latest tag); flashing wipes the network and requires re-pairing every
+device.
+
+### BLE to WiFi proxy
+
+ESPHome runs only as a flashing tool — there is no ESPHome container. Flash and
+configure ESP32 boards from <https://web.esphome.io/?dashboard_wizard> in Chrome.
+
+1. Connect the ESP32 with a USB data cable and put it into bootloader mode.
+2. Install the initial ESPHome firmware with the web flasher.
+3. Use "Edit configuration" to add the BLE proxy:
+   ```yaml
+   esp32_ble_tracker:
+     scan_parameters:
+       interval: 1100ms
+       window: 1100ms
+
+   bluetooth_proxy:
+   ```
+4. Save, re-flash, then adopt the device via the auto-discovered ESPHome
+   integration and enable BTHome.
+
+Reception on the ESP32 dev kit is weak in practice; the Zigbee path below is the
+more reliable one.
+
+### Flashing Mi temperature and humidity sensors
+
+Using <https://github.com/pvvx/ATC_MiThermometer>, from Chrome on Windows —
+Android and Fedora struggle with Bluetooth. Open
+<https://pvvx.github.io/ATC_MiThermometer/TelinkMiFlasher.html>, tick "Get
+advertising MAC", filter `LYWSD03`, connect, and do Activation. Save the Token
+and Bind Key somewhere safe, then either:
+
+* **Zigbee** (preferred) — flash the Zigbee Custom Firmware, remove and reinsert
+  the battery, bridge the two pins next to the battery for 10 seconds to enter
+  pairing mode, and enable "Permit join" in Zigbee2MQTT.
+* **BLE** — flash `ATC_v48.bin`, filter `ATC`, reconnect, name it `MI<INDEX>`,
+  and set a PIN (write it on paper under the sensor cover).
+
+New devices appear under the MQTT or BTHome integration in Home Assistant.
+
+### HACS
+
+<https://hacs.xyz/docs/use/download/download/#to-download-hacs>. Installs into
+`/var/lib/homelab/homeassistant/custom_components/`; run the install script via
+`podman exec -it homeassistant bash`, then `sudo systemctl restart
+homeassistant`. Better Thermostat (<https://better-thermostat.org/>) is installed
+this way — install the UI too, then restart.
 
 ## Scripts
 

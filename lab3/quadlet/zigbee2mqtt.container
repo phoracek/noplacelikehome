@@ -3,6 +3,12 @@ Description=Zigbee2MQTT
 After=network-online.target mosquitto.service
 Wants=network-online.target
 Requires=mosquitto.service
+# Zigbee2MQTT exits when the broker goes away and does not come back on its own
+# (Restart=always only covers it crashing, not a clean exit after Mosquitto was
+# stopped). PartOf propagates Mosquitto's stop and restart down to here, so
+# restarting the broker restarts this too instead of silently leaving the Zigbee
+# network offline.
+PartOf=mosquitto.service
 
 [Container]
 # Pinned to last 1.x release: it ships the legacy `ezsp` driver, which

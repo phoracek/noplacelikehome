@@ -111,6 +111,32 @@ http://clouds.lab.pacmag.cz {
 	reverse_proxy clouds-over-czechoslovakia-server:80
 }
 
+# Home Assistant and Zigbee2MQTT run with Network=host, not on the homelab
+# bridge — Home Assistant needs the host's interfaces for SSDP/mDNS device
+# discovery and Bluetooth, and Zigbee2MQTT for the USB dongle. So they have no
+# container name to dial and Caddy reaches them back through the bridge gateway,
+# which Podman resolves as host.containers.internal.
+home.lab.pacmag.cz {
+	import wedos_tls
+	# Not behind the forward_auth gate: Home Assistant has its own accounts, and
+	# the companion apps, the REST/WebSocket API and webhooks authenticate with
+	# bearer tokens that carry no VoidAuth session cookie — a proxy gate would
+	# 302-redirect them to a login page they can't complete.
+	#
+	# Home Assistant rejects proxied requests unless it is told which proxy to
+	# trust; see `http:` in its configuration.yaml, which lists this bridge subnet.
+	reverse_proxy host.containers.internal:8123
+}
+
+zigbee.lab.pacmag.cz {
+	import wedos_tls
+	# Ungated by choice, unlike Glances — but note this frontend has no login of
+	# its own either, so anyone who can resolve the name can pair devices and
+	# rewrite the Zigbee network. Zigbee2MQTT's own frontend.auth_token is the
+	# alternative to `import voidauth` here.
+	reverse_proxy host.containers.internal:8124
+}
+
 forge.lab.pacmag.cz {
 	import wedos_tls
 	# Not behind the forward_auth gate: the CI runners, git-over-HTTPS, the
