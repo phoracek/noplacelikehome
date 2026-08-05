@@ -222,9 +222,19 @@ is how devices on the LAN find it. That is separate from the `home.lab.pacmag.cz
 vhost, which is the way in for browsers and the companion apps.
 
 `configuration.yaml` and the rest of `/var/lib/homelab/homeassistant/` are edited
-through the UI and are **not** managed by Ansible. One part of it is load-bearing
-for the ingress: the `http:` block lists the Podman bridge in `trusted_proxies`,
-without which Home Assistant rejects everything Caddy forwards.
+through the UI and are **not** managed by Ansible. One file is the exception,
+because it is load-bearing for the ingress: `http.yaml` holds
+`use_x_forwarded_for` plus the Podman bridge subnet in `trusted_proxies`, without
+which Home Assistant rejects everything Caddy forwards. Ansible writes it, reading
+the subnet from `podman network inspect homelab` so a rebuilt host that gets a
+different one still works. `configuration.yaml` pulls it in with:
+
+```yaml
+http: !include http.yaml
+```
+
+That one line is the only part a bare-metal rebuild has to put back by hand.
+`internal_url` also lives in `configuration.yaml`, but nothing breaks without it.
 
 ### First-time configuration
 

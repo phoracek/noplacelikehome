@@ -1,0 +1,15 @@
+# Managed by Ansible (deploy_services_containerized_applications.yml) — edits here
+# are overwritten. Pulled into configuration.yaml with `http: !include http.yaml`.
+#
+# Home Assistant is behind the Caddy TLS ingress at https://home.lab.pacmag.cz.
+# It ignores X-Forwarded-For from any proxy it has not been told to trust, so
+# without the subnet below every proxied request arrives looking like it came
+# from the bridge gateway and is rejected before reaching a handler — the vhost
+# errors while Home Assistant itself looks perfectly healthy.
+#
+# The subnet is read from `podman network inspect homelab` at deploy time rather
+# than hardcoded: Podman assigns it, so a rebuilt host can legitimately get a
+# different one.
+use_x_forwarded_for: true
+trusted_proxies:
+  - {{ homelab_subnet }}

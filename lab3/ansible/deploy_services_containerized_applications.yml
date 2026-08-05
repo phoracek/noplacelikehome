@@ -167,7 +167,8 @@
 
     # Home Assistant keeps everything in one config directory; it runs as root in
     # the container, so no ownership fixup is needed. configuration.yaml and the
-    # rest of the tree are edited through the UI and are NOT managed from here.
+    # rest of the tree are edited through the UI and are NOT managed from here —
+    # http.yaml below is the one exception.
     - name: Ensure Home Assistant config directory exists
       ansible.builtin.file:
         path: /var/lib/homelab/homeassistant
@@ -175,6 +176,29 @@
         owner: root
         group: root
         mode: "0755"
+
+    # Home Assistant has to be told to trust the reverse proxy, and the proxy's
+    # subnet is whatever Podman gave the homelab network — so read it back rather
+    # than hardcode it.
+    - name: Look up the homelab bridge subnet
+      ansible.builtin.command:
+        cmd: podman network inspect homelab
+      register: homelab_network_raw
+      changed_when: false
+
+    # Kept out of configuration.yaml (which is hand/UI-edited and unmanaged) and
+    # pulled in from there with `http: !include http.yaml`, so the ingress-critical
+    # part survives a rebuild while the rest of the file stays the user's.
+    - name: Install Home Assistant's proxy-trust config
+      ansible.builtin.template:
+        src: templates/homeassistant/http.yaml.j2
+        dest: /var/lib/homelab/homeassistant/http.yaml
+        owner: root
+        group: root
+        mode: "0644"
+      vars:
+        homelab_subnet: "{{ (homelab_network_raw.stdout | from_json)[0].subnets[0].subnet }}"
+      notify: Restart homeassistant
 
     - name: Ensure Mosquitto data directories exist
       ansible.builtin.file:
@@ -437,6 +461,12 @@
     - name: Restart grist
       ansible.builtin.systemd_service:
         name: grist.service
+        state: restarted
+      failed_when: false
+
+    - name: Restart homeassistant
+      ansible.builtin.systemd_service:
+        name: homeassistant.service
         state: restarted
       failed_when: false
 
