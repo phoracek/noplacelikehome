@@ -20,9 +20,10 @@ Let's Encrypt via ACME DNS-01.
       :2222 ─────────────────────▶ forgejo (git over SSH — raw TCP, can't be proxied)
 ```
 
-Services reach each other on the `homelab` Podman network by container name and
-publish no host ports of their own — only Caddy binds 80 and 443. Everything
-runs as rootful Podman containers defined as systemd Quadlet units
+Most services reach each other on the `homelab` Podman network by container name
+and publish no host ports of their own; of the ports they listen on, only Caddy's
+80 and 443 and Forgejo's 2222 are open in the firewall. Everything runs as
+rootful Podman containers defined as systemd Quadlet units
 (`quadlet/*.container`); Ansible copies them to the host and starts them.
 
 Three units are the exception and run with `Network=host`: Home Assistant needs

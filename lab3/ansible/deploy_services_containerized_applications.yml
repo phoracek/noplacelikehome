@@ -196,8 +196,10 @@
         force: false
       notify: Restart zigbee2mqtt
 
-    # Gives the Zigbee dongle a stable /dev/zigbee symlink and a group the
-    # container can open.
+    # Sets the dongle's node to dialout/0660 and adds a /dev/zigbee symlink. The
+    # Quadlet unit dials the /dev/serial/by-id/ path instead (created by udev's
+    # own serial rules), and rootful Podman runs as root, so nothing currently
+    # depends on either — it is here for a rootless or non-by-id setup.
     - name: Install udev rule for the Zigbee dongle
       ansible.builtin.copy:
         src: files/udev/99-zigbee.rules
