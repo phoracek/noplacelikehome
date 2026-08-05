@@ -129,6 +129,42 @@
         group: root
         mode: "0755"
 
+    # Each Forgejo Actions runner bind-mounts /var/lib/homelab/<name> at /data
+    # (its config.yml, action cache, workflow workdirs). Podman won't create the
+    # bind-mount source, so the dir must exist — owned by the in-container runner
+    # user (rootful Podman maps container UID 1000 to host UID 1000).
+    - name: Ensure per-runner data dirs exist (owned by the runner uid)
+      ansible.builtin.file:
+        path: "/var/lib/homelab/{{ item.name }}"
+        state: directory
+        owner: "1000"
+        group: "1000"
+        mode: "0755"
+      loop: "{{ forgejo_runners | default([]) }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    # The uuid/token are secrets, so config.yml is templated from the gitignored
+    # group_vars at 0600 rather than committed.
+    - name: Install per-runner config.yml (entries with placeholder credentials are skipped)
+      ansible.builtin.template:
+        src: templates/forgejo-runner/config.yml.j2
+        dest: "/var/lib/homelab/{{ runner.name }}/config.yml"
+        owner: "1000"
+        group: "1000"
+        mode: "0600"
+      loop: "{{ forgejo_runners | default([]) }}"
+      loop_control:
+        loop_var: runner
+        label: "{{ runner.name }}"
+      when:
+        - runner.uuid != "PASTE_UUID_HERE"
+        - runner.token != "PASTE_TOKEN_HERE"
+      register: runner_config_files
+      # The loop item is the whole runner dict, token included, and Ansible dumps
+      # the item verbatim when a task in the loop fails.
+      no_log: true
+
     # Home Assistant keeps everything in one config directory; it runs as root in
     # the container, so no ownership fixup is needed. configuration.yaml and the
     # rest of the tree are edited through the UI and are NOT managed from here.
@@ -250,6 +286,32 @@
       register: quadlet_files
       notify: Reload systemd
 
+    - name: Install per-runner Quadlet units (entries with placeholder credentials are skipped)
+      # Runner Quadlets are generated, not copied, because the unit has to embed
+      # each runner's chosen name (ContainerName, data Volume path). Everything
+      # else about a runner — image, SELinux type, socket mount, labels — is
+      # identical across runners, so it lives in the template.
+      #
+      # Skip placeholder entries: the unit's [Install] WantedBy= would otherwise
+      # pull a credential-less runner in at the next boot, where it crash-loops
+      # because no config.yml was written for it.
+      ansible.builtin.template:
+        src: templates/forgejo-runner/runner.container.j2
+        dest: "{{ quadlet_dir }}/{{ runner.name }}.container"
+        owner: root
+        group: root
+        mode: "0644"
+      loop: "{{ forgejo_runners | default([]) }}"
+      loop_control:
+        loop_var: runner
+        label: "{{ runner.name }}"
+      when:
+        - runner.uuid != "PASTE_UUID_HERE"
+        - runner.token != "PASTE_TOKEN_HERE"
+      register: runner_quadlet_files
+      notify: Reload systemd
+      no_log: true
+
     - name: Install systemd timer units
       ansible.builtin.copy:
         src: "files/systemd/{{ item }}.timer"
@@ -289,6 +351,64 @@
       when: item.changed and item.item in container_units
       loop_control:
         label: "{{ item.item }}"
+
+    - name: Start each runner once its credentials are configured
+      # WantedBy= in the unit handles auto-start at boot; this start is for the
+      # first deploy after credentials are filled in. Entries still on the
+      # PASTE_* placeholders have no config.yml and are skipped.
+      ansible.builtin.systemd_service:
+        name: "{{ item.name }}.service"
+        state: started
+      loop: "{{ forgejo_runners | default([]) }}"
+      when:
+        - item.uuid != "PASTE_UUID_HERE"
+        - item.token != "PASTE_TOKEN_HERE"
+      loop_control:
+        label: "{{ item.name }}"
+      register: runners_started
+      # The loop item is the whole runner dict, token included.
+      no_log: true
+
+    # A restart cancels whatever job the runner is executing, so the two restart
+    # tasks below must not fire for a runner this run just started from stopped:
+    # it came up seconds ago already reading the new unit and config, and by the
+    # time the restart tasks run it can have claimed a queued job. Restarting it
+    # then fails that job for no reason — which is exactly what a first deploy
+    # used to do, three starts in a row.
+    - name: Note which runners were started from stopped by this run
+      ansible.builtin.set_fact:
+        runners_just_started: >-
+          {{ runners_started.results | default([])
+             | selectattr('changed', 'defined') | selectattr('changed')
+             | map(attribute='item.name') | list }}
+
+    - name: Restart runners whose Quadlet changed (only if they were already running)
+      ansible.builtin.systemd_service:
+        name: "{{ item.runner.name }}.service"
+        state: restarted
+      loop: "{{ runner_quadlet_files.results | default([]) }}"
+      when:
+        - item.changed | default(false)
+        - item.runner.name not in runners_just_started
+      loop_control:
+        label: "{{ item.runner.name }}"
+
+    - name: Restart runners whose config.yml changed (only if they were already running)
+      # forgejo-runner reads its config only at startup, so a rewritten config.yml
+      # (a rotated token, changed labels) has no effect until the daemon restarts.
+      # The 'Start each runner' task above is a no-op on an already-running unit,
+      # so without this an in-place credential change would silently keep using
+      # the stale config.
+      ansible.builtin.systemd_service:
+        name: "{{ item.runner.name }}.service"
+        state: restarted
+      loop: "{{ runner_config_files.results | default([]) }}"
+      when:
+        - item.changed | default(false)
+        - item.runner.name not in runners_just_started
+      loop_control:
+        label: "{{ item.runner.name }}"
+      no_log: true
 
     - name: Enable and start systemd timers
       ansible.builtin.systemd_service:

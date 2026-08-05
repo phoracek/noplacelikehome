@@ -52,6 +52,56 @@
         state: started
         enabled: true
 
+    # --- Rootful Podman API socket, used by the Forgejo Actions runners to
+    # --- spawn job containers as siblings on this host.
+    - name: Create podman-users group (fixed GID for socket access by forgejo-runner)
+      ansible.builtin.group:
+        name: podman-users
+        gid: 980
+        system: true
+        state: present
+
+    - name: Ensure podman.socket drop-in directory exists
+      ansible.builtin.file:
+        path: /etc/systemd/system/podman.socket.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Drop-in to gate podman.socket behind the podman-users group
+      # The runner container runs as a non-root user but needs to reach the
+      # rootful Podman socket. Default ownership is root:root 0660, so move the
+      # group to podman-users (GID 980); the runner Quadlet picks that GID up via
+      # GroupAdd=980. The socket stays unreadable to everyone else on the host.
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/podman.socket.d/override.conf
+        content: |
+          [Socket]
+          SocketMode=0660
+          SocketGroup=podman-users
+        owner: root
+        group: root
+        mode: "0644"
+      register: podman_socket_override
+
+    - name: Reload systemd if podman.socket drop-in changed
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+      when: podman_socket_override.changed
+
+    - name: Restart podman.socket if its drop-in changed
+      ansible.builtin.systemd_service:
+        name: podman.socket
+        state: restarted
+      when: podman_socket_override.changed
+
+    - name: Enable the rootful Podman API socket (used by forgejo-runner)
+      ansible.builtin.systemd_service:
+        name: podman.socket
+        state: started
+        enabled: true
+
     - name: Create the homelab data root
       # Every service's persistent state lives under here, one subdirectory per
       # service, created by the play that deploys it.

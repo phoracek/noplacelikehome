@@ -58,3 +58,26 @@ grist_oidc_client_secret: "replace-with-the-voidauth-grist-client-secret"
 # /var/lib/homelab/forgejo/gitea/conf/app.ini on first run and keeps them there
 # as part of its data — that file is what makes gitea.db readable, so it belongs
 # with the data rather than with the playbooks.
+
+# Forgejo Actions runners. Each entry becomes one systemd unit, one container,
+# and one data dir (/var/lib/homelab/<name>/). Add or remove entries to change
+# how many runners run — the playbooks loop over this list. They serve the forge
+# at https://forge.lab.pacmag.cz on this same host, and these credentials are
+# validated against rows in its gitea.db, so they only mean anything to that
+# instance.
+#
+# To get the uuid + token for an entry: in Forgejo open
+# Site Administration → Actions → Runners → "Create new runner". The page shows
+# a UUID and a registration token (the token is shown once — copy both). Paste
+# them below, replacing the PASTE_* placeholders.
+#
+# Entries left with the PASTE_* placeholders are skipped: no config.yml is
+# written and the runner is not started, so you can commit-then-fill at your
+# own pace.
+forgejo_runners:
+  - name: forgejo-runner-1
+    uuid: "PASTE_UUID_HERE"
+    token: "PASTE_TOKEN_HERE"
+  - name: forgejo-runner-2
+    uuid: "PASTE_UUID_HERE"
+    token: "PASTE_TOKEN_HERE"

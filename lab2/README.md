@@ -45,8 +45,8 @@ ssh-copy-id petr@192.168.88.254
 Provision the host. Before deploying services, copy
 `group_vars/server.yml.example` to `group_vars/server.yml` (gitignored) and fill
 in the credentials it documents: the Wedos WAPI credentials Caddy uses for TLS
-(see [TLS](#tls)) and the runner registration pairs under `forgejo_runners`
-(see [Forgejo Actions runners](#forgejo-actions-runners)).
+(see [TLS](#tls)) and the hardware-bench MCP credentials
+(see [Hardware bench MCP](#hardware-bench-mcp)).
 Install the `ansible.posix` collection too — the hardware-MCP play uses its
 `synchronize` (rsync) module.
 
@@ -78,7 +78,6 @@ After `deploy_services.yml` the following services are running:
 | Service | URL | Purpose |
 |---------|-----|---------|
 | `caddy.service` | <http://t470s.lab.pacmag.cz> | Reverse proxy (TLS termination) |
-| `forgejo-runner-1.service`, `forgejo-runner-2.service` | (workers, no UI) | Forgejo Actions runners — one systemd unit per entry in `forgejo_runners`. They serve the forge on the OptiPlex and run its hardware-bench jobs here |
 | `ramus-mcp` | <https://ramus-mcp.lab.pacmag.cz> | Hardware bench MCP — a host systemd service, not a container |
 
 ### DHCP static leases
@@ -186,129 +185,6 @@ served from exactly one host: two machines renewing one name collide on the
 single shared `_acme-challenge` TXT record, so a vhost or a stored certificate
 for a name lab3 serves must never be left here.
 
-## Forgejo Actions runners
-
-Two [Forgejo Actions](https://forgejo.org/docs/latest/user/actions/) runners
-pick up CI jobs and run each job as a Podman container **on this host**, which is
-the point of them being here: ramus's hardware lanes need the bench attached to
-this machine, and the OptiPlex cannot reach `192.168.88.0/24` at all — this LAN
-sits behind a router that masquerades outbound, so traffic goes one way only.
-Actions are enabled on the forge itself (`FORGEJO__actions__ENABLED=true` in its
-Quadlet, over on the OptiPlex); the runners are defined declaratively as one
-entry each in `forgejo_runners` (`group_vars/server.yml`), rendered into one
-Quadlet unit + one `config.yml` per entry. Add or remove entries to change how
-many runners run.
-
-The jobs that need this machine specifically are ramus's hardware lanes
-(`protocol-hw-tests`, `editor-hw-tests`): they flash real firmware and drive the
-bench through the [hardware bench MCP](#hardware-bench-mcp) below. They serialize
-on a repo-wide `concurrency: hw-bench` group so only one job touches the device at
-a time — which is why two runners do not mean two concurrent flashes.
-
-### Registering the runners
-
-Forgejo 15 / Runner 12 uses a YAML config file with persistent connection
-credentials. All host-side steps go through Ansible — no manual editing on the
-server.
-
-1. In Forgejo: **Site Administration → Actions → Runners → "Create new
-   runner"**. The page shows a UUID and a registration token (the token is
-   shown once — copy both).
-2. On your workstation, paste the values into the gitignored secrets file
-   (created from `server.yml.example` during provisioning):
-
-   ```sh
-   $EDITOR ansible/group_vars/server.yml   # fill uuid/token under forgejo_runners
-   ```
-
-   Entries left on the `PASTE_*` placeholders are skipped — no `config.yml` is
-   written and the runner is not started, so you can fill them in one at a time.
-3. Re-run `deploy_services_containerized_applications.yml`. It writes one
-   `/var/lib/homelab/<name>/config.yml`, renders one Quadlet per entry, and
-   starts each runner once its credentials are real:
-
-   ```sh
-   ansible-playbook -i inventory.file -u ansible deploy_services_containerized_applications.yml
-   ```
-
-   The Quadlet's `WantedBy=` handles auto-start at boot.
-
-### Runner ↔ host Podman: how it's wired
-
-Each runner reaches Forgejo at `https://forge.lab.pacmag.cz/` — the same URL
-clients use, resolving to the OptiPlex. That is an ordinary outbound HTTPS
-connection: out through the `192.168.88.1` router, which masquerades, to Caddy on
-`192.168.0.252`. The cert is a real Let's Encrypt cert, so no insecure-TLS flags
-are needed, and neither the runner Quadlet nor the job containers it spawns pin
-the name to a host address. The same DNS carries the registry pulls in ramus's
-workflows (`forge.lab.pacmag.cz/petr/ramus/agentic`), which go through the host's
-Podman.
-
-To spawn job containers as siblings, the runner needs the host's rootful Podman
-socket — granted without disabling any security layer:
-
-1. **DAC** — `install_podman.yml` creates a system group `podman-users`
-   (GID 980) and drops in `/etc/systemd/system/podman.socket.d/override.conf`
-   setting `SocketMode=0660` + `SocketGroup=podman-users`. The runner Quadlet
-   has `GroupAdd=980` so the in-container user is a supplementary member.
-2. **MAC** — the runner Quadlet sets
-   `SecurityLabelType=container_runtime_t`. The Podman socket is labeled
-   `container_var_run_t`, which the default `container_t` domain is forbidden
-   from touching; `container_runtime_t` (the domain Podman itself uses) is
-   permitted. SELinux stays enforcing for every other container on the host.
-
-Confirm the type is applied:
-`sudo podman inspect forgejo-runner-1 --format '{{.ProcessLabel}}'` should
-report `…:container_runtime_t:…`.
-
-### Daily ops
-
-```sh
-sudo systemctl status 'forgejo-runner-*'
-sudo journalctl -u forgejo-runner-1 -f   # or -u forgejo-runner-2
-sudo podman ps --filter name=ACT_        # job containers (siblings) while a job runs
-```
-
-The admin Actions page
-(<https://forge.lab.pacmag.cz/-/admin/actions/runners>) shows each runner's
-`Idle`/`Active` status.
-
-### Running CI on a repo
-
-Drop a workflow at `.forgejo/workflows/<name>.yml`. Minimal example running in
-the runner-default `node:20-bookworm` image:
-
-```yaml
-name: check
-
-on:
-  push:
-  pull_request:
-
-jobs:
-  check:
-    runs-on: docker
-    steps:
-      - uses: actions/checkout@v4
-      - run: echo "hello from CI"
-```
-
-`runs-on: docker` (or `ubuntu-latest`) matches the labels the runner registers
-with (set in `ansible/templates/forgejo-runner/config.yml.j2`).
-`actions/checkout@v4` resolves via
-`FORGEJO__actions__DEFAULT_ACTIONS_URL=https://code.forgejo.org`.
-
-Each runner's state (`config.yml` + workdir/cache) lives at
-`/var/lib/homelab/<runner-name>/`, so the daily backup (which tars all of
-`/var/lib/homelab`, see [Backups](#backups)) captures it automatically. Only the
-`config.yml` is worth anything on restore — the rest is Actions cache and
-workflow workdirs, regenerated on the next run.
-
-The registration `uuid`/`token` pairs in `group_vars/server.yml` are checked
-against `action_runner` rows in the forge's `gitea.db`, which lives on the
-OptiPlex. Restoring one host without the other leaves the runners unregistered
-and they have to be re-created in the forge's admin UI.
-
 ## Backups
 
 All persistent service state lives in host bind mounts under
@@ -320,9 +196,7 @@ data into a dated archive under `/var/backups/homelab/`
 
 What's worth capturing here is small: Caddy's issued certs and ACME state
 (`caddy/data`, `caddy/config`), the Caddyfile and the 0600 secret env files
-(`wedos.env`, `ramus-mcp.env`), and the runners' `config.yml` files. Of each
-runner's directory only the `config.yml` matters on restore — the rest is Actions
-cache and workflow workdirs, regenerated on the next run.
+(`wedos.env`, `ramus-mcp.env`).
 
 The tar takes all of `/var/lib/homelab`, so any leftover service directory under
 it is swept into every archive; delete what is no longer in use rather than
@@ -347,13 +221,12 @@ systemctl list-timers homelab-backup.timer    # next scheduled run
 
 To **restore**, stop the containers, extract an archive over the root
 filesystem (`tar -p` restores the original ownership and modes, including the
-uid/gid 1000 runner dirs and the 0600 secrets), then start the containers
-again:
+0600 secrets), then start the containers again:
 
 ```sh
-systemctl stop caddy.service 'forgejo-runner-*'
+systemctl stop caddy.service
 tar -xzpf /var/backups/homelab/homelab-YYYY-MM-DD.tar.gz -C /
-systemctl start caddy.service 'forgejo-runner-*'
+systemctl start caddy.service
 ```
 
 ## Remote access

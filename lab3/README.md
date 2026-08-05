@@ -52,6 +52,7 @@ two services on this host.
 | `homeassistant.service` | <https://home.lab.pacmag.cz> | Home automation (logs users in itself). Host network |
 | `zigbee2mqtt.service` | <https://zigbee.lab.pacmag.cz> | Zigbee bridge. Host network, owns the USB dongle. **No login of its own** — see the note below |
 | `mosquitto.service` | `127.0.0.1:1883` | MQTT broker between the two. Host network, loopback only, no web UI to proxy |
+| `forgejo-runner-1.service`, `forgejo-runner-2.service` | (workers, no UI) | Forgejo Actions runners — one systemd unit per entry in `forgejo_runners`. They serve the forge on this same host |
 
 Every hostname above is an A record pointing at `192.168.0.252`. Forgejo's two
 Actions runners run on the T470s (`../lab2`) and reach the forge over HTTPS.
@@ -117,6 +118,102 @@ There is no backup playbook here yet.
    `192.168.0.252` in the WEDOS zone. Services with no login of their own get
    gated at the edge with `import voidauth`; ones that speak OIDC register a
    client in VoidAuth instead and are proxied plain (Grist and Forgejo).
+
+## Forgejo Actions runners
+
+Two [Forgejo Actions](https://forgejo.org/docs/latest/user/actions/) runners pick
+up CI jobs and run each job as a Podman container on this host. Actions are
+enabled on the forge itself (`FORGEJO__actions__ENABLED=true` in its Quadlet);
+the runners are declared as one entry each in `forgejo_runners`
+(`group_vars/server.yml`), rendered into one Quadlet unit + one `config.yml` per
+entry. Add or remove entries to change how many runners run.
+
+Jobs that need real hardware are the exception and **cannot run here**: ramus's
+hardware lanes (`protocol-hw-tests`, `editor-hw-tests`) flash firmware and drive
+the bench attached to the T470s, and this host cannot reach `192.168.88.0/24` —
+that LAN is behind a router that masquerades outbound, so traffic goes one way
+only. Those lanes need a runner on the T470s (`../lab2`).
+
+### Registering a runner
+
+Forgejo 15 / Runner 12 uses a YAML config file with persistent connection
+credentials. All host-side steps go through Ansible — no manual editing on the
+server.
+
+1. In Forgejo: **Site Administration → Actions → Runners → "Create new
+   runner"**. The page shows a UUID and a registration token (the token is shown
+   once — copy both).
+2. Fill them into the matching entry under `forgejo_runners` in
+   `ansible/group_vars/server.yml` (gitignored).
+3. Re-run `deploy_services.yml`. Entries still on the `PASTE_*` placeholders get
+   no `config.yml` and are not started, so they can be filled in one at a time.
+
+### Runner ↔ host Podman: how it's wired
+
+Each runner reaches the forge at `https://forge.lab.pacmag.cz/` — its public
+name, which resolves to this host's own LAN address and hairpins back to Caddy's
+published 443. The job containers it spawns take the same path, so one URL works
+for the runner, for git clones and for registry pulls, with no `/etc/hosts` pins
+anywhere.
+
+To spawn job containers as siblings, the runner needs the host's rootful Podman
+socket, which takes two things (both in `install_podman.yml`):
+
+1. **DAC** — `podman.socket` gets a drop-in setting `SocketMode=0660` +
+   `SocketGroup=podman-users` (GID 980); the runner Quadlet joins that GID via
+   `GroupAdd=980`. The socket stays unreadable to everyone else.
+2. **MAC** — the runner Quadlet sets `SecurityLabelType=container_runtime_t`.
+   The socket is labeled `container_var_run_t`, which the default `container_t`
+   is explicitly denied. Other containers keep running in `container_t`.
+
+`sudo podman inspect forgejo-runner-1 --format '{{.ProcessLabel}}'` should show
+`container_runtime_t`.
+
+### Daily ops
+
+```sh
+sudo systemctl status 'forgejo-runner-*'
+sudo journalctl -u forgejo-runner-1 -f   # or -u forgejo-runner-2
+sudo podman ps --filter name=FORGEJO-ACTIONS-TASK   # job containers while a job runs
+```
+
+The admin Actions page
+(<https://forge.lab.pacmag.cz/-/admin/actions/runners>) shows each runner's
+`Idle`/`Active` status.
+
+A deploy restarts a runner only when its unit or `config.yml` actually changed
+*and* it was already running — restarting cancels the job in flight, so a runner
+this run just started is left alone.
+
+### Running CI on a repo
+
+Drop a workflow at `.forgejo/workflows/<name>.yml`. Minimal example running in
+the runner-default `node:20-bookworm` image:
+
+```yaml
+name: check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: docker
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "hello from CI"
+```
+
+`runs-on: docker` (or `ubuntu-latest`) matches the labels the runner registers
+with (set in `ansible/templates/forgejo-runner/config.yml.j2`).
+`actions/checkout@v4` resolves via
+`FORGEJO__actions__DEFAULT_ACTIONS_URL=https://code.forgejo.org`.
+
+Each runner's state (`config.yml` + workdir/cache) lives at
+`/var/lib/homelab/<runner-name>/`. Only the `config.yml` is worth anything on
+restore — the rest is Actions cache and workflow workdirs, regenerated on the
+next run.
 
 ## Home Assistant
 

@@ -8,45 +8,12 @@
   # but it must exist before Caddy starts, so it lives here; renaming it would
   # mean recreating the network, which is churn for no gain.
   #
-  # `container_units` is empty rather than deleted: the runner units below are
-  # templated (each embeds its own name), not copied, and this list is where a
-  # plain container on this host would go.
+  # `container_units` is empty rather than deleted: nothing on this host is a
+  # plain container any more, and this list is where one would go.
   vars:
     quadlet_dir: /etc/containers/systemd
     container_units: []
   tasks:
-    # Each Forgejo Actions runner bind-mounts /var/lib/homelab/<name> at /data
-    # (its config.yml, action cache, workflow workdirs). Podman won't create the
-    # bind-mount source, so the dir must exist — owned by the in-container runner
-    # user (rootful Podman maps container UID 1000 to host UID 1000).
-    - name: Ensure per-runner data dirs exist (owned by the runner uid)
-      ansible.builtin.file:
-        path: "/var/lib/homelab/{{ item.name }}"
-        state: directory
-        owner: "1000"
-        group: "1000"
-        mode: "0755"
-      loop: "{{ forgejo_runners | default([]) }}"
-      loop_control:
-        label: "{{ item.name }}"
-
-    - name: Install per-runner config.yml (entries with placeholder credentials are skipped)
-      ansible.builtin.template:
-        src: templates/forgejo-runner/config.yml.j2
-        dest: "/var/lib/homelab/{{ runner.name }}/config.yml"
-        owner: "1000"
-        group: "1000"
-        mode: "0600"
-      loop: "{{ forgejo_runners | default([]) }}"
-      loop_control:
-        loop_var: runner
-        label: "{{ runner.name }}"
-      when:
-        - runner.uuid != "PASTE_UUID_HERE"
-        - runner.token != "PASTE_TOKEN_HERE"
-      register: runner_config_files
-      no_log: true
-
     # --- Quadlet units ---
     - name: Install network Quadlet unit
       ansible.builtin.copy:
@@ -68,37 +35,6 @@
       register: quadlet_files
       notify: Reload systemd
 
-    - name: Install per-runner Quadlet units (entries with placeholder credentials are skipped)
-      # Runner Quadlets are generated, not copied, because the unit has to embed
-      # each runner's chosen name (ContainerName, data Volume path). Everything
-      # else about a runner — image, SELinux type, socket mount, labels — is
-      # identical across runners, so it lives in the template.
-      #
-      # Skip placeholder entries: the unit's [Install] WantedBy= would otherwise
-      # pull a credential-less runner in at the next boot, where it crash-loops
-      # because no config.yml was written for it. Gate the unit on the same real-
-      # credentials check as the config.yml above so an un-filled entry leaves no
-      # unit behind at all.
-      ansible.builtin.template:
-        src: templates/forgejo-runner/runner.container.j2
-        dest: "{{ quadlet_dir }}/{{ runner.name }}.container"
-        owner: root
-        group: root
-        mode: "0644"
-      loop: "{{ forgejo_runners | default([]) }}"
-      loop_control:
-        loop_var: runner
-        label: "{{ runner.name }}"
-      when:
-        - runner.uuid != "PASTE_UUID_HERE"
-        - runner.token != "PASTE_TOKEN_HERE"
-      register: runner_quadlet_files
-      notify: Reload systemd
-      # Same reason as the config.yml task above: the loop item is the whole
-      # runner dict, token included, and Ansible dumps the item verbatim when a
-      # task in this loop fails.
-      no_log: true
-
     # Run pending handlers (image build, daemon-reload) before starting units,
     # so the custom image exists and systemd sees the latest unit files.
     - name: Apply pending image build and systemd reload
@@ -109,11 +45,13 @@
         name: forgejo-network.service
         state: started
 
+    # No `enabled:` — Quadlet generates these units, so systemctl cannot enable
+    # or disable them; their [Install] section is what the generator turns into
+    # wants-symlinks on every daemon-reload.
     - name: Start container services
       ansible.builtin.systemd_service:
         name: "{{ item }}.service"
         state: started
-        enabled: false
       loop: "{{ container_units }}"
 
     - name: Restart services whose Quadlet unit changed
@@ -126,45 +64,6 @@
       when: item.changed
       loop_control:
         label: "{{ item.item }}"
-
-    - name: Start each runner once its credentials are configured
-      # WantedBy= in the unit handles auto-start at boot; this start is for the
-      # first deploy after credentials are filled in. Entries still on the
-      # PASTE_* placeholders have no config.yml and are skipped.
-      ansible.builtin.systemd_service:
-        name: "{{ item.name }}.service"
-        state: started
-      loop: "{{ forgejo_runners | default([]) }}"
-      when:
-        - item.uuid != "PASTE_UUID_HERE"
-        - item.token != "PASTE_TOKEN_HERE"
-      loop_control:
-        label: "{{ item.name }}"
-
-    - name: Restart runners whose Quadlet changed (only if their credentials are real)
-      ansible.builtin.systemd_service:
-        name: "{{ item.runner.name }}.service"
-        state: restarted
-      loop: "{{ runner_quadlet_files.results | default([]) }}"
-      when: item.changed | default(false)
-      loop_control:
-        label: "{{ item.runner.name }}"
-
-    - name: Restart runners whose config.yml changed (only if their credentials are real)
-      # forgejo-runner reads its config only at startup, so a rewritten config.yml
-      # (e.g. a rotated token or changed labels) has no effect until the daemon
-      # restarts. The 'Start each runner' task above is a no-op on an already-
-      # running unit, so without this an in-place credential change would silently
-      # keep using the stale config. Skipped (placeholder) entries register
-      # changed=false, so they're filtered out by the same check.
-      ansible.builtin.systemd_service:
-        name: "{{ item.runner.name }}.service"
-        state: restarted
-      loop: "{{ runner_config_files.results | default([]) }}"
-      when: item.changed | default(false)
-      loop_control:
-        label: "{{ item.runner.name }}"
-      no_log: true
 
   handlers:
     - name: Reload systemd

@@ -13,6 +13,6 @@ runner:
     - docker:docker://node:20-bookworm
     - ubuntu-latest:docker://node:20-bookworm
 
-# No `container.options` block: the forge runs on another host and its name
-# resolves through ordinary DNS, so job containers need no /etc/hosts pin to
-# reach the server URL above or to pull from its registry.
+# No `container.options` block: the forge is on this host but is reached by its
+# public name, which resolves to the host's LAN address, so job containers need
+# no /etc/hosts pin to reach the server URL above or to pull from its registry.

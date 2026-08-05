@@ -50,66 +50,6 @@
         state: started
         enabled: true
 
-    - name: Create podman-users group (fixed GID for socket access by forgejo-runner)
-      ansible.builtin.group:
-        name: podman-users
-        gid: 980
-        system: true
-        state: present
-
-    - name: Ensure podman.socket drop-in directory exists
-      ansible.builtin.file:
-        path: /etc/systemd/system/podman.socket.d
-        state: directory
-        owner: root
-        group: root
-        mode: "0755"
-
-    - name: Drop-in to gate podman.socket behind the podman-users group
-      # The runner container runs as a non-root user but needs to reach
-      # the rootful Podman socket. Default ownership is root:root 0660,
-      # so we move the group to podman-users (GID 980) and the runner
-      # Quadlet picks that GID up via GroupAdd=980. The socket stays
-      # unreadable to everyone else on the host.
-      ansible.builtin.copy:
-        dest: /etc/systemd/system/podman.socket.d/override.conf
-        content: |
-          [Socket]
-          SocketMode=0660
-          SocketGroup=podman-users
-        owner: root
-        group: root
-        mode: "0644"
-      register: podman_socket_override
-
-    - name: Reload systemd if podman.socket drop-in changed
-      ansible.builtin.systemd_service:
-        daemon_reload: true
-      when: podman_socket_override.changed
-
-    - name: Restart podman.socket if its drop-in changed
-      ansible.builtin.systemd_service:
-        name: podman.socket
-        state: restarted
-      when: podman_socket_override.changed
-
-    - name: Enable the rootful Podman API socket (used by forgejo-runner)
-      ansible.builtin.systemd_service:
-        name: podman.socket
-        state: started
-        enabled: true
-
-    - name: Trust the Forgejo container registry as insecure (plain HTTP)
-      ansible.builtin.copy:
-        dest: /etc/containers/registries.conf.d/lab2-local.conf
-        content: |
-          [[registry]]
-          location = "lab2.local:8128"
-          insecure = true
-        owner: root
-        group: root
-        mode: "0644"
-
     - name: Create homelab data directories
       ansible.builtin.file:
         path: "{{ item }}"
@@ -147,10 +87,6 @@
         enabled: true
 
     - name: Open ports 80 and 443 for Caddy
-      # 443 is the client-facing HTTPS port, and also the path Forgejo Actions
-      # runners (and the job containers they spawn) take to reach the Forgejo
-      # web UI: they resolve forge.lab.pacmag.cz to the host gateway and hairpin
-      # back to Caddy's published 443. Without 443 open, that lookup is refused.
       ansible.posix.firewalld:
         port: "{{ item }}"
         permanent: true

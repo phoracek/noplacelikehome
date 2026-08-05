@@ -33,29 +33,6 @@
 wedos_username: "your-wedos-account-login"
 wedos_password: "your-wapi-password"
 
-# Forgejo Actions runners. Each entry becomes one systemd unit, one container,
-# and one data dir (/var/lib/homelab/<name>/). Add or remove entries to change
-# how many runners run — the playbooks loop over this list. They serve the forge
-# at https://forge.lab.pacmag.cz, which runs on the OptiPlex (../../lab3): these
-# credentials are validated against rows in that host's gitea.db, so neither side
-# is much use restored without the other.
-#
-# To get the uuid + token for an entry: in Forgejo open
-# Site Administration → Actions → Runners → "Create new runner". The page shows
-# a UUID and a registration token (the token is shown once — copy both). Paste
-# them below, replacing the PASTE_* placeholders.
-#
-# Entries left with the PASTE_* placeholders are skipped: no config.yml is
-# written and the runner is not started, so you can commit-then-fill at your
-# own pace.
-forgejo_runners:
-  - name: forgejo-runner-1
-    uuid: "PASTE_UUID_HERE"
-    token: "PASTE_TOKEN_HERE"
-  - name: forgejo-runner-2
-    uuid: "PASTE_UUID_HERE"
-    token: "PASTE_TOKEN_HERE"
-
 # Credentials gating the hardware-bench MCP control channel (acquire_lock,
 # served behind Caddy at https://ramus-mcp.lab.pacmag.cz). ramus_mcp_basic_auth_password_hash
 # is a bcrypt hash (pip install bcrypt):
