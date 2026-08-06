@@ -1,8 +1,52 @@
 ---
-- name: Configure hostname
+- name: Configure the network
   hosts: server
   become: yes
+  vars:
+    # Subnets that are not reachable through the LAN's default gateway, each
+    # routed via a next hop on the LAN instead. Format is nmcli's own:
+    # "<destination CIDR> <next hop>".
+    static_routes:
+      - "192.168.89.0/24 192.168.0.2"
   tasks:
     - name: Set a hostname
       ansible.builtin.hostname:
         name: home
+
+    # NetworkManager owns the interface, but the profile's name is whatever it
+    # was called when the NIC was first brought up, so it is resolved from the
+    # device carrying the default route rather than hardcoded here.
+    - name: Find the NetworkManager connection on the default-route interface
+      ansible.builtin.command:
+        cmd: nmcli -g GENERAL.CONNECTION device show {{ ansible_default_ipv4.interface }}
+      register: nm_connection
+      changed_when: false
+
+    - name: Read the static routes already on that connection
+      ansible.builtin.command:
+        cmd: nmcli -g ipv4.routes connection show {{ nm_connection.stdout | quote }}
+      register: nm_routes
+      changed_when: false
+
+    # ipv4.routes is assigned wholesale rather than appended to with
+    # `+ipv4.routes`: assignment is idempotent and makes the list above the only
+    # source of truth for this profile, whereas repeated appends stack duplicate
+    # entries onto it. Anything added to the profile by hand is therefore
+    # dropped on the next run — routes belong in static_routes.
+    - name: Set the static routes on the connection
+      ansible.builtin.command:
+        cmd: >-
+          nmcli connection modify {{ nm_connection.stdout | quote }}
+          ipv4.routes {{ static_routes | join(', ') | quote }}
+      vars:
+        current: "{{ nm_routes.stdout.split(',') | map('trim') | reject('equalto', '') | list | sort }}"
+      when: current != (static_routes | map('trim') | list | sort)
+      register: routes_modified
+
+    # `device reapply` pushes the profile's changed settings onto the live
+    # device in place. `connection up` would also work, but it takes the link
+    # down first and so drops the SSH connection this play is running over.
+    - name: Reapply the connection so the routes take effect without a reboot
+      ansible.builtin.command:
+        cmd: nmcli device reapply {{ ansible_default_ipv4.interface }}
+      when: routes_modified is changed

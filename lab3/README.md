@@ -80,6 +80,11 @@ ansible-playbook -i inventory.file -u ansible    deploy_services.yml
 ```
 
 The first five are host setup and only need re-running to change the host itself.
+`configure_network.yml` sets the hostname and owns the NetworkManager profile's
+static routes — the `static_routes` list at the top of that playbook is the only
+place to add one, since it is written wholesale and overwrites anything set on
+the profile by hand. Today it carries a single route, `192.168.89.0/24` via
+`192.168.0.2`.
 `deploy_services.yml` is the entry point for the stack: it deploys the
 containerised backends and the shared network first, then Caddy last, so no vhost
 forwards to a backend that isn't up yet. Each imported playbook also runs on its
