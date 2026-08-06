@@ -1,0 +1,13 @@
+[Unit]
+Description=Remove dangling container images daily
+
+[Timer]
+OnCalendar=daily
+# Spread this away from midnight, where dnf-automatic and podman-auto-update
+# also sit; auto-update pulling a new :latest is what creates the dangling
+# images this then collects.
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

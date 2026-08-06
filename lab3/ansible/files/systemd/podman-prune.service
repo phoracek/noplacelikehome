@@ -1,0 +1,18 @@
+[Unit]
+Description=Remove dangling container images
+Documentation=man:podman-image-prune(1)
+
+[Service]
+Type=oneshot
+# Deliberately no `-a`. Without it this removes only dangling (untagged)
+# images, which is exactly what accumulates here: every rebuild of a `:latest`
+# tag moves the tag to the new image and orphans the old one. Tagged images are
+# never touched, so the job images the runners depend on (node:20-bookworm) and
+# the locally built Caddy image — which has no registry copy to restore it from
+# — survive regardless of age. `-a` would prune both: podman has no last-used
+# timestamp for images, and its `until` filter matches on image *build* time,
+# which for a pulled image says nothing about whether it is still in use.
+#
+# `--external` is likewise omitted, so images held by buildah working containers
+# are left alone and this can run while a CI job is mid-build.
+ExecStart=/usr/bin/podman image prune -f
