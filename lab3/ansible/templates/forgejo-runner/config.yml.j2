@@ -13,6 +13,14 @@ runner:
     - docker:docker://node:20-bookworm
     - ubuntu-latest:docker://node:20-bookworm
 
-# No `container.options` block: the forge is on this host but is reached by its
-# public name, which resolves to the host's LAN address, so job containers need
-# no /etc/hosts pin to reach the server URL above or to pull from its registry.
+container:
+  # Re-pull the job image on every run instead of trusting the host's cached
+  # copy. Workflows reference `:latest` tags in this forge's own registry, so a
+  # stale cache fails a job as if the repo's own code were broken while the
+  # registry holds a correct image — a deceptive failure that looks like a
+  # missing build dependency. The registry is on this host, so an unchanged
+  # image costs a manifest check, not a re-download.
+  force_pull: true
+  # No `options` key: the forge is on this host but is reached by its public
+  # name, which resolves to the host's LAN address, so job containers need no
+  # /etc/hosts pin to reach the server URL above or to pull from its registry.
