@@ -54,8 +54,7 @@ two services on this host.
 | `mosquitto.service` | `127.0.0.1:1883` | MQTT broker between the two. Host network, loopback only, no web UI to proxy |
 | `forgejo-runner-1.service`, `forgejo-runner-2.service` | (workers, no UI) | Forgejo Actions runners — one systemd unit per entry in `forgejo_runners`. They serve the forge on this same host |
 
-Every hostname above is an A record pointing at `192.168.0.252`. Forgejo's two
-Actions runners run on the T470s (`../lab2`) and reach the forge over HTTPS.
+Every hostname above is an A record pointing at `192.168.0.252`.
 
 Zigbee2MQTT's frontend is served over TLS but is **not** gated by VoidAuth and
 has no password, so anyone who can resolve the name can pair devices and rewrite
@@ -140,11 +139,12 @@ the runners are declared as one entry each in `forgejo_runners`
 (`group_vars/server.yml`), rendered into one Quadlet unit + one `config.yml` per
 entry. Add or remove entries to change how many runners run.
 
-Jobs that need real hardware are the exception and **cannot run here**: ramus's
-hardware lanes (`protocol-hw-tests`, `editor-hw-tests`) flash firmware and drive
-the bench attached to the T470s, and this host cannot reach `192.168.88.0/24` —
-that LAN is behind a router that masquerades outbound, so traffic goes one way
-only. Those lanes need a runner on the T470s (`../lab2`).
+Jobs that need real hardware have nothing attached to this host to drive:
+ramus's hardware lanes (`protocol-hw-tests`, `editor-hw-tests`) flash firmware
+and talk to the labgrid coordinator on the bench host (`../bench-host`) at
+`192.168.89.2`. This host reaches it over the `192.168.89.0/24` static route
+`configure_network.yml` installs, and the MikroTik in front of the bench lets
+in only SSH and the coordinator port.
 
 ### Registering a runner
 

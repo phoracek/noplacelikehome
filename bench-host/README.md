@@ -37,12 +37,11 @@ The access model:
   RTT, MIDI, firmware sync — rides inside the SSH connection, so no other
   port is open.
 - Bench net → anywhere: internet egress only (out the WAN port, masqueraded,
-  then through the home router). It cannot initiate traffic to the home LAN or
-  to the MikroTik's own `192.168.88.0/24` LAN.
+  then through the home router). It cannot initiate traffic to the home LAN.
 
 Because the bench net lives behind the MikroTik, home-LAN clients need a
 static route `192.168.89.0/24 via 192.168.0.2` (per client, or once on the
-home router), same as the existing one for `192.168.88.0/24`.
+home router).
 
 labgrid clients also SSH to the exporter by its registered name, which is the
 Pi's hostname — so each client machine wants:
@@ -107,11 +106,12 @@ add place-before=$wanDrop chain=forward src-address=192.168.0.0/24 dst-address=1
 add place-before=$wanDrop chain=forward dst-address=192.168.89.0/24 action=drop comment="bench-host: nothing else reaches the Pi network"
 add place-before=$wanDrop chain=forward src-address=192.168.89.0/24 dst-address=192.168.0.0/24 action=drop comment="bench-host: no Pi traffic to the home LAN"
 add place-before=$wanDrop chain=forward src-address=192.168.89.0/24 out-interface-list=WAN action=accept comment="bench-host: internet egress"
-add place-before=$wanDrop chain=forward src-address=192.168.89.0/24 action=drop comment="bench-host: drop the rest (incl. the 192.168.88.0/24 LAN)"
+add place-before=$wanDrop chain=forward src-address=192.168.89.0/24 action=drop comment="bench-host: no Pi traffic to other local networks"
 ```
 
-The final drop also covers Pi → `192.168.88.0/24`: that traffic leaves via the
-LAN bridge, not the WAN port, so the egress accept doesn't match it.
+The final drop is the catch-all: anything the Pi sends that did not leave via
+the WAN port is denied, so a local network added to the router later is closed
+to the bench until a rule says otherwise.
 
 The Pi can still talk to the router itself (DHCP, DNS — that's the input
 chain, not forward). Restricting that further wasn't a goal here.

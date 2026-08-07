@@ -1,5 +1,0 @@
-[Unit]
-Description=Internal network for Forgejo + Caddy
-
-[Network]
-NetworkName=forgejo
