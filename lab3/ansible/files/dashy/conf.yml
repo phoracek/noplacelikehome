@@ -68,10 +68,21 @@ sections:
         target: newtab
         statusCheckUrl: https://zigbee.lab.pacmag.cz
 
-      # The one tile here that isn't proxied: the router is a physical box on the
-      # LAN with its own admin UI, so it keeps its plain http://kabelbox.local URL.
+      # The two tiles here that aren't proxied: both are physical boxes on the
+      # LAN with their own admin UIs, so they keep their plain http:// URLs.
       - title: Home router
         description: Kabelbox admin interface
         icon: fas fa-network-wired
         url: http://kabelbox.local
         target: newtab
+
+      # The MikroTik in front of the bench net, reached on its WAN-side address
+      # on the home LAN (see bench-host/README.md). Its default input-chain rules
+      # only accept management traffic from the LAN side, so a status check from
+      # lab3 would report down even when the router is fine — hence disabled.
+      - title: MikroTik
+        description: Bench network router (WebFig)
+        icon: hl-mikrotik
+        url: http://192.168.0.2
+        target: newtab
+        statusCheck: false
