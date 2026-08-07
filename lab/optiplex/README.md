@@ -1,8 +1,9 @@
-# Lab 3
+# OptiPlex
 
 The OptiPlex (`192.168.0.252`). One Caddy reverse proxy terminates TLS for every
 service and routes by hostname under `*.lab.pacmag.cz`, with certificates from
-Let's Encrypt via ACME DNS-01.
+Let's Encrypt via ACME DNS-01. The network it sits on — and the hardware bench
+it drives — are in the [lab README](../README.md).
 
 ```
 [ home LAN 192.168.0.0/24 ]
@@ -83,7 +84,8 @@ The first five are host setup and only need re-running to change the host itself
 static routes — the `static_routes` list at the top of that playbook is the only
 place to add one, since it is written wholesale and overwrites anything set on
 the profile by hand. Today it carries a single route, `192.168.89.0/24` via
-`192.168.0.2`.
+`192.168.0.2`, which is this host's way onto the [bench
+network](../README.md#reaching-the-bench).
 `deploy_services.yml` is the entry point for the stack: it deploys the
 containerised backends and the shared network first, then Caddy last, so no vhost
 forwards to a backend that isn't up yet. Each imported playbook also runs on its
@@ -141,7 +143,7 @@ entry. Add or remove entries to change how many runners run.
 
 Jobs that need real hardware have nothing attached to this host to drive:
 ramus's hardware lanes (`protocol-hw-tests`, `editor-hw-tests`) flash firmware
-and talk to the labgrid coordinator on the bench host (`../bench-host`) at
+and talk to the labgrid coordinator on the [bench host](../README.md) at
 `192.168.89.2`. This host reaches it over the `192.168.89.0/24` static route
 `configure_network.yml` installs, and the MikroTik in front of the bench lets
 in only SSH and the coordinator port.

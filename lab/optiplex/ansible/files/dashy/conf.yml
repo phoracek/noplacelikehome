@@ -77,9 +77,9 @@ sections:
         target: newtab
 
       # The MikroTik in front of the bench net, reached on its WAN-side address
-      # on the home LAN (see bench-host/README.md). Its default input-chain rules
-      # only accept management traffic from the LAN side, so a status check from
-      # lab3 would report down even when the router is fine — hence disabled.
+      # on the home LAN (see lab/README.md). Its default input-chain rules only
+      # accept management traffic from the LAN side, so a status check from the
+      # OptiPlex would report down even when the router is fine — hence disabled.
       - title: MikroTik
         description: Bench network router (WebFig)
         icon: hl-mikrotik

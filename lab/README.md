@@ -1,11 +1,37 @@
-# Bench host
+# Lab
 
-The network slot for the [ramus](https://forge.lab.pacmag.cz) hardware bench: a
-Raspberry Pi 5 (`rpi5`) hanging off the MikroTik's third port in its own
-isolated `/24`. The machine itself — the labgrid coordinator and exporter, the
+Two machines. An OptiPlex on the home LAN runs the service stack — everything
+under `*.lab.pacmag.cz` — and is documented in [`optiplex/`](optiplex/README.md).
+A Raspberry Pi 5 (`rpi5`) is the [ramus](https://forge.lab.pacmag.cz) hardware
+bench, hanging off a MikroTik in its own isolated `/24`.
+
+This README is the shared part: the network they both sit on, and all it takes
+to cover the bench. The Pi itself — the labgrid coordinator and exporter, the
 bench services, host bootstrap and automatic updates — is provisioned from the
-ramus repo (`tools/bench/deploy/ansible/`); this directory documents only the
-network around it.
+ramus repo (`tools/bench/deploy/ansible/`); nothing in this repo touches it.
+
+```
+                        [ internet ]
+                              ▲
+                 [ home router 192.168.0.1 ]
+                              │
+        ┌────────[ home LAN 192.168.0.0/24 ]────────┐
+        │                                           │
+  [ OptiPlex ] 192.168.0.252            (WAN, ether1) 192.168.0.2
+    *.lab.pacmag.cz                            [ MikroTik ]
+    (see optiplex/)                       (ether3) 192.168.89.1
+                                                    │
+                                      [ bench net 192.168.89.0/24 ]
+                                                    │
+                                          [ rpi5 ] 192.168.89.2
+                                                  (DHCP, pinned lease)
+```
+
+| Host | Address | Provisioned from |
+|------|---------|------------------|
+| OptiPlex | `192.168.0.252` | `optiplex/ansible/` — see [`optiplex/README.md`](optiplex/README.md) |
+| MikroTik | `192.168.0.2` (WAN) / `192.168.89.1` (bench) | manual, RouterOS terminal — see below |
+| rpi5 | `192.168.89.2` | ramus repo, `tools/bench/deploy/ansible/` |
 
 The MikroTik is not the main home router — it hangs off the home LAN as a
 client at `192.168.0.2` (its WAN port), with the home router at `192.168.0.1`
@@ -13,20 +39,20 @@ in front of it. Traffic from the home LAN therefore enters the MikroTik
 through its *WAN* side, which is what dictates the firewall rule placement
 below.
 
+## Reaching the bench
+
+Because the bench net lives behind the MikroTik, home-LAN clients need a
+static route `192.168.89.0/24 via 192.168.0.2` (per client, or once on the
+home router). The OptiPlex gets its own through `configure_network.yml`, which
+is what lets the Forgejo Actions runners there drive the bench.
+
+labgrid clients also SSH to the exporter by its registered name, which is the
+Pi's hostname — so each client machine wants:
+
 ```
-                     [ internet ]
-                          ▲
-              [ home router 192.168.0.1 ]
-                          │
-              [ home LAN 192.168.0.0/24 ]      ← clients need a route:
-                          │                      192.168.89.0/24 via 192.168.0.2
-        (WAN, ether1) 192.168.0.2
-                    [ MikroTik ]
-              (ether3) 192.168.89.1
-                          │
-           [ bench-host net 192.168.89.0/24 ]
-                          │
-             [ rpi5 ] 192.168.89.2 (DHCP, pinned lease)
+# ~/.ssh/config
+Host rpi5
+    HostName 192.168.89.2
 ```
 
 The access model:
@@ -39,26 +65,13 @@ The access model:
 - Bench net → anywhere: internet egress only (out the WAN port, masqueraded,
   then through the home router). It cannot initiate traffic to the home LAN.
 
-Because the bench net lives behind the MikroTik, home-LAN clients need a
-static route `192.168.89.0/24 via 192.168.0.2` (per client, or once on the
-home router).
-
-labgrid clients also SSH to the exporter by its registered name, which is the
-Pi's hostname — so each client machine wants:
-
-```
-# ~/.ssh/config
-Host rpi5
-    HostName 192.168.89.2
-```
-
 ## MikroTik
 
 Everything below is pasted into the RouterOS terminal (v7 syntax). The router
 itself stays manually managed — Ansible only touches the Pi.
 
 On the default configuration `ether3` is a port of the LAN bridge. First make
-it a routed port of its own, give it the bench-host address, and serve DHCP on it:
+it a routed port of its own, give it the bench address, and serve DHCP on it:
 
 ```
 /interface bridge port remove [find interface=ether3]
