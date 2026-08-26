@@ -1,0 +1,84 @@
+[Unit]
+Description=Speedtest Tracker
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=lscr.io/linuxserver/speedtest-tracker:latest
+ContainerName=speedtest-tracker
+# Web UI is internal-only: it joins the shared network with Caddy and publishes
+# no host port, reachable only via Caddy at https://speed.lab.pacmag.cz. The
+# image serves HTTP on 80 inside the container (and a self-signed 443 that
+# nothing here uses — Caddy terminates TLS).
+Network=homelab.network
+# The SQLite database, Laravel's cache and the app's config all live under
+# /config. Podman won't create the bind-mount source, so Ansible makes
+# /var/lib/homelab/speedtest-tracker/config first.
+Volume=/var/lib/homelab/speedtest-tracker/config:/config:Z
+# APP_KEY (encrypts data at rest) and ADMIN_PASSWORD are secrets, so Ansible
+# templates them from the gitignored group_vars/server.yml into this 0600 env
+# file.
+EnvironmentFile=/var/lib/homelab/speedtest-tracker/speedtest-tracker.env
+# Serve the dashboard to unauthenticated users. The vhost is deliberately not
+# behind the VoidAuth gate (see the Caddyfile), so this makes the charts
+# readable by anyone on the home LAN — a deliberate trade: the read-only view is
+# throughput/ping/loss history plus the external IP each result records, and
+# everything that acts (settings, running a test, the API) still wants the
+# account below.
+Environment=PUBLIC_DASHBOARD=true
+# Seeds the first user on the very first start. With no gate in front, this
+# password is the *only* thing standing between the LAN and the settings pages,
+# so it matters more here than it would behind forward_auth: left unset, the app
+# creates the well-known admin@example.com / "password" and the active half of
+# the app is open too.
+#
+# Only read during initial setup — once the SQLite DB has a users table these
+# are ignored, so changing the password later is a profile-page edit, not a
+# redeploy.
+Environment=ADMIN_NAME=Petr
+Environment=ADMIN_EMAIL=p.horacek94@gmail.com
+# LinuxServer images drop to PUID/PGID and chown /config to it on start. 1000 is
+# this host's `admin` account, which rootful Podman maps straight through — the
+# same uid Forgejo and the CI runners already use for their data.
+Environment=PUID=1000
+Environment=PGID=1000
+# Laravel builds absolute links from APP_URL, and ASSET_URL is what makes the
+# CSS/JS load through a reverse proxy rather than from the container's own idea
+# of its address. Both have to be the public name.
+Environment=APP_URL=https://speed.lab.pacmag.cz
+Environment=ASSET_URL=https://speed.lab.pacmag.cz
+Environment=DB_CONNECTION=sqlite
+# Quoted because systemd splits Environment= on whitespace: without the quotes
+# the cron expression arrives as SPEEDTEST_SCHEDULE=0 plus four junk variables,
+# and the scheduler silently never fires. One test a night at 03:00.
+Environment="SPEEDTEST_SCHEDULE=0 3 * * *"
+# Which Ookla server every test runs against. Left unset, the CLI picks the
+# "best" server per run, and a server that changes night to night gets measured
+# along with the line — exactly the drift this instance exists to detect.
+#
+# 49678 is Vodafone CZ's own Prague server, and Vodafone (AS16019) is the ISP on
+# the other side of the Kabelbox. On-net is the right choice for the question
+# being asked: the path is as short as it gets, so a decline is much more likely
+# to be the modem or the coax than someone else's congestion. The blind spot is
+# the mirror image — Vodafone's peering and transit are not on this path, so a
+# real-world slowdown there shows up as "everything looks fine". A neutral
+# Prague host (11181 NFX, 63380 Coolhousing) is what to compare against if the
+# graphs ever look too clean.
+#
+# Exactly ONE id, not a list: with several, SelectSpeedtestServerJob calls
+# Arr::random() and picks one per run, which puts the night-to-night variance
+# straight back. Re-list them any time with
+# `podman exec speedtest-tracker speedtest -L`.
+Environment=SPEEDTEST_SERVERS=49678
+# PRUNE_RESULTS_OLDER_THAN is deliberately unset: results are kept forever. One
+# row a night is nothing, and the whole point is the multi-year trend.
+Environment=APP_TIMEZONE=Europe/Prague
+Environment=DISPLAY_TIMEZONE=Europe/Prague
+Environment=TZ=Europe/Prague
+AutoUpdate=registry
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=multi-user.target default.target

@@ -15,6 +15,7 @@ it drives — are in the [lab README](../README.md).
                              ├──▶ glances.lab.pacmag.cz  ──▶ glances:61208  ┘ forward_auth
                              ├──▶ grist.lab.pacmag.cz    ──▶ grist:8484      (own OIDC login)
                              ├──▶ forge.lab.pacmag.cz    ──▶ forgejo:3000    (own OIDC login)
+                             ├──▶ speed.lab.pacmag.cz    ──▶ speedtest-…:80  (charts open, own login to act)
                              ├──▶ clouds.lab.pacmag.cz   ──▶ clouds-…-server:80  (open, http + https)
                              ├──▶ home.lab.pacmag.cz     ──▶ host:8123       (own login)
                              └──▶ zigbee.lab.pacmag.cz   ──▶ host:8124       (open)
@@ -48,6 +49,7 @@ two services on this host.
 | `dashy.service`    | <https://lab.pacmag.cz> | Service dashboard (no login of its own — gated by VoidAuth) |
 | `grist.service`    | <https://grist.lab.pacmag.cz> | Spreadsheet / database (logs users in itself, via OIDC against VoidAuth) |
 | `forgejo.service`  | <https://forge.lab.pacmag.cz> | Git forge, container registry and CI (logs users in itself, via OIDC against VoidAuth). Also binds host port 2222 for git-over-SSH |
+| `speedtest-tracker.service` | <https://speed.lab.pacmag.cz> | Nightly Ookla speed test, results kept forever. Ungated: the charts are readable by anyone on the LAN, its own login guards the settings — see [Speedtest Tracker](#speedtest-tracker) |
 | `clouds-over-czechoslovakia-server.service` | <https://clouds.lab.pacmag.cz> | Satellite cloud cover, served by nginx. Ungated, and also served over plain HTTP — an ESP32 e-ink display polls it and can't do TLS or log in |
 | `clouds-over-czechoslovakia.service` | — | Regenerates those artifacts; runs once per firing of `clouds-over-czechoslovakia.timer` (every 10 min), not at boot |
 | `homeassistant.service` | <https://home.lab.pacmag.cz> | Home automation (logs users in itself). Host network |
@@ -96,7 +98,7 @@ own.
 ```sh
 # Status
 sudo systemctl status caddy voidauth glances dashy grist forgejo \
-                     homeassistant zigbee2mqtt mosquitto
+                     speedtest-tracker homeassistant zigbee2mqtt mosquitto
 
 # Logs (certificate issuance lives in Caddy's journal)
 sudo journalctl -u caddy -f
@@ -130,7 +132,10 @@ There is no backup playbook here yet.
 3. Add its vhost to `ansible/files/caddy/Caddyfile` and a matching A record →
    `192.168.0.252` in the WEDOS zone. Services with no login of their own get
    gated at the edge with `import voidauth`; ones that speak OIDC register a
-   client in VoidAuth instead and are proxied plain (Grist and Forgejo).
+   client in VoidAuth instead and are proxied plain (Grist and Forgejo). A
+   service that has its own login but no OIDC can go either way — gated, at the
+   cost of a second prompt and of any token-authenticated client, or plain,
+   letting its own login do the work (Speedtest Tracker).
 
 ## Forgejo Actions runners
 
@@ -228,6 +233,102 @@ Each runner's state (`config.yml` + workdir/cache) lives at
 `/var/lib/homelab/<runner-name>/`. Only the `config.yml` is worth anything on
 restore — the rest is Actions cache and workflow workdirs, regenerated on the
 next run.
+
+## Speedtest Tracker
+
+One Ookla speed test a night at 03:00 (`SPEEDTEST_SCHEDULE` in the Quadlet),
+recorded to SQLite under `/var/lib/homelab/speedtest-tracker/config/` and kept
+forever — the question it exists to answer is whether the ISP's cable modem
+degrades over months, so there is no retention window.
+
+### Why this one isn't gated
+
+Speedtest Tracker splits cleanly in half, and only one half needs protecting.
+`PUBLIC_DASHBOARD=true` serves the charts to unauthenticated users; the settings
+pages, running a test on demand and the API all still want its own account. So
+the vhost is left ungated and the app's own login guards the half that acts —
+anyone on the home LAN can read the graphs, nobody can change anything.
+
+Two things follow from that:
+
+* **The seeded admin password is the whole fence.** With no `forward_auth` in
+  front, `ADMIN_EMAIL`/`ADMIN_PASSWORD` (first start only) are what keep the
+  settings closed. Left unset the app creates the well-known
+  `admin@example.com` / `password` and the active half is open too.
+* **The API works from the LAN**, which it would not behind the gate: a bearer
+  token carries no VoidAuth session cookie, so `forward_auth` would 302
+  `POST /api/v1/speedtests/run` to the login portal — the same reason Forgejo
+  and Home Assistant are proxied plain.
+
+What the open half exposes is throughput, ping and loss history plus the
+external IP each result records. The name resolves only on this network. Gating
+it later is one `import voidauth` line, at the cost of that API path.
+
+Note that Speedtest Tracker speaks no OIDC and upstream [closed the
+trusted-header SSO request as not
+planned](https://github.com/alexjustesen/speedtest-tracker/issues/1530), so
+joining VoidAuth the way Grist and Forgejo do is not an option here — the choice
+really is gate-or-no-gate.
+
+### First-time configuration
+
+1. Open <https://speed.lab.pacmag.cz>. The dashboard is there with no login.
+   Changing anything under Settings needs the seeded account
+   (`p.horacek94@gmail.com` + `speedtest_tracker_admin_password`).
+2. Nothing else — the test server is already pinned (see below).
+
+### The pinned server
+
+`SPEEDTEST_SERVERS=49678` is Vodafone CZ's Prague server, and Vodafone
+(AS16019) is the ISP on the far side of the Kabelbox, so every test runs on-net.
+That is deliberate: the shorter the path, the more of any decline belongs to the
+modem or the coax rather than to somebody else's congestion — which is the
+question this service exists to answer. Its blind spot is the mirror image,
+since Vodafone's peering and transit never enter the measurement; a real
+slowdown out there would show up here as "everything looks fine". Compare
+against a neutral Prague host (`11181` NFX, `63380` Coolhousing) if the graphs
+ever look too clean.
+
+Left unset, the CLI picks the "best" server per run and the choice of server
+gets measured along with the line. Note this must stay a **single** id: given a
+list, `SelectSpeedtestServerJob` calls `Arr::random()` and draws one per run,
+which puts that variance straight back. Re-list the nearby servers with:
+
+```sh
+sudo podman exec speedtest-tracker speedtest -L
+```
+
+### Running a test on demand
+
+There is no artisan command for it — the app ships `app:ookla-list-servers`,
+`app:user-reset-password`, `app:user-change-role` and `app:result-fix-statuses`,
+and nothing that queues a test. Two ways in:
+
+* The run action in the dashboard header, after logging in as the seeded admin.
+* `POST /api/v1/speedtests/run`, with an optional `server_id` in the body. Mint
+  a token at `/admin/api-tokens` with the **Run Speedtest** ability:
+
+  ```sh
+  curl -X POST https://speed.lab.pacmag.cz/api/v1/speedtests/run \
+       -H "Authorization: Bearer $TOKEN" -H "Accept: application/json"
+  ```
+
+  This works from anywhere on the LAN precisely because the vhost is ungated;
+  putting `import voidauth` back would 302 it to the login portal.
+
+### Reading the results
+
+Throughput is the least sensitive number on the page. It is a measurement of
+the whole path — modem, ISP backhaul, peering, the far-end server — and one
+sample a night is a thin defence against all of that noise, so a slow night
+means very little on its own. Ping and packet loss on a *pinned* server are the
+columns that move first and mean the most when they drift.
+
+None of it is direct evidence about the modem. The Kabelbox's own status page
+(`http://kabelbox.local`, tiled in Dashy) reports per-channel SNR and
+upstream/downstream power levels, and those are what actually degrade when a
+cable modem or the coax to it goes bad — typically well before throughput does.
+Scraping them is not wired up here.
 
 ## Home Assistant
 

@@ -15,6 +15,7 @@
       - dashy
       - grist
       - forgejo
+      - speedtest-tracker
       - clouds-over-czechoslovakia-server
       - mosquitto
       - zigbee2mqtt
@@ -125,6 +126,33 @@
         - /var/lib/homelab/forgejo/gitea
         - /var/lib/homelab/forgejo/git
         - /var/lib/homelab/forgejo/var
+
+    # The LinuxServer image drops to PUID/PGID 1000 and writes its SQLite DB and
+    # Laravel cache into the bind mount, so the host directory must be owned by
+    # uid/gid 1000 (rootful Podman maps 1000 straight through). The image chowns
+    # /config itself on start, but only once it can enter the directory.
+    #
+    # No `recurse`: the tree is one small SQLite DB plus a cache the app rewrites
+    # constantly, and the top-level ownership is all the entrypoint needs.
+    - name: Ensure Speedtest Tracker data directory exists (owned by the app uid)
+      ansible.builtin.file:
+        path: /var/lib/homelab/speedtest-tracker/config
+        state: directory
+        owner: "1000"
+        group: "1000"
+        mode: "0755"
+
+    # APP_KEY encrypts data at rest, so it's templated from the gitignored
+    # group_vars into a 0600 env file the container reads (EnvironmentFile in
+    # speedtest-tracker.container).
+    - name: Install Speedtest Tracker environment file
+      ansible.builtin.template:
+        src: templates/speedtest-tracker/speedtest-tracker.env.j2
+        dest: /var/lib/homelab/speedtest-tracker/speedtest-tracker.env
+        owner: root
+        group: root
+        mode: "0600"
+      notify: Restart speedtest-tracker
 
     # Written by the generator container, served read-only by the nginx one.
     - name: Ensure Clouds over Czechoslovakia data directory exists
@@ -477,6 +505,12 @@
     - name: Restart grist
       ansible.builtin.systemd_service:
         name: grist.service
+        state: restarted
+      failed_when: false
+
+    - name: Restart speedtest-tracker
+      ansible.builtin.systemd_service:
+        name: speedtest-tracker.service
         state: restarted
       failed_when: false
 

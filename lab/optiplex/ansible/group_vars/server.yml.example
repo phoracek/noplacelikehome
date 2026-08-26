@@ -53,6 +53,28 @@ voidauth_storage_key: "replace-with-a-long-random-string-at-least-32-chars"
 grist_session_secret: "replace-with-a-long-random-string"
 grist_oidc_client_secret: "replace-with-the-voidauth-grist-client-secret"
 
+# Speedtest Tracker (speed.lab.pacmag.cz) is a Laravel app and refuses to
+# start without an APP_KEY, which encrypts its data at rest. It must be exactly
+# the string `base64:` followed by 32 base64-encoded random bytes:
+#
+#   echo "base64:$(openssl rand -base64 32)"
+#
+# Keep it stable once set — changing it makes the already-stored results
+# undecryptable.
+#
+# speedtest_tracker_admin_password is the password of the first user, seeded on
+# the very first start together with ADMIN_EMAIL from the Quadlet. Reading the
+# dashboard doesn't need it (PUBLIC_DASHBOARD=true serves the charts to
+# everyone on the LAN), but the Settings pages and the API do — and since this
+# vhost is not behind the VoidAuth gate, this password is the only thing
+# guarding them. Without it the app falls back to admin@example.com /
+# "password".
+#
+# Only read during initial setup. Once the database exists, change the password
+# on the profile page instead — editing it here has no effect.
+speedtest_tracker_app_key: "replace-with-the-output-of-the-openssl-command-above"
+speedtest_tracker_admin_password: "replace-with-a-strong-password"
+
 # Forgejo needs no entry here. It generates its own secrets (SECRET_KEY,
 # INTERNAL_TOKEN, JWT_SECRET, LFS_JWT_SECRET) into
 # /var/lib/homelab/forgejo/gitea/conf/app.ini on first run and keeps them there

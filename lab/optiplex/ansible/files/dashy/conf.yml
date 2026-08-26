@@ -47,6 +47,16 @@ sections:
         url: https://grist.lab.pacmag.cz
         target: newtab
 
+      # In neither icon set the tiles above draw from, so use a Font Awesome
+      # glyph. The vhost is ungated and the app answers /api/healthcheck without
+      # a token, so the status check has something honest to hit.
+      - title: Speedtest Tracker
+        description: Nightly ISP speed history
+        icon: fas fa-gauge-high
+        url: https://speed.lab.pacmag.cz
+        target: newtab
+        statusCheckUrl: https://speed.lab.pacmag.cz/api/healthcheck
+
       - title: Clouds over Czechoslovakia
         description: Satellite cloud cover
         icon: fas fa-cloud-sun

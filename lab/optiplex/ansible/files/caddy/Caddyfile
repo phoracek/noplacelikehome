@@ -95,6 +95,24 @@ grist.lab.pacmag.cz {
 	reverse_proxy grist:8484
 }
 
+speed.lab.pacmag.cz {
+	import wedos_tls
+	# Ungated by choice. PUBLIC_DASHBOARD=true in the Quadlet makes the charts
+	# readable without logging in, and that read-only view is all this exposes:
+	# the settings pages, running a test on demand and the API each still want
+	# the app's own account, seeded from ADMIN_EMAIL/ADMIN_PASSWORD.
+	#
+	# Leaving the gate off is also what lets the API work from the LAN at all —
+	# a bearer token carries no VoidAuth session cookie, so forward_auth would
+	# 302 `POST /api/v1/speedtests/run` to the login portal, the same way it
+	# would break Forgejo's runners and Home Assistant's companion apps.
+	#
+	# What anyone on the LAN can therefore read: throughput, ping and loss
+	# history, and the external IP each result records. The name resolves only
+	# on this network.
+	reverse_proxy speedtest-tracker:80
+}
+
 clouds.lab.pacmag.cz {
 	import wedos_tls
 	# Not gated: the only regular consumer is an ESP32 e-ink display polling
