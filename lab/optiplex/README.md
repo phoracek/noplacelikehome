@@ -17,6 +17,7 @@ it drives — are in the [lab README](../README.md).
                              ├──▶ forge.lab.pacmag.cz    ──▶ forgejo:3000    (own OIDC login)
                              ├──▶ speed.lab.pacmag.cz    ──▶ speedtest-…:80  (charts open, own login to act)
                              ├──▶ clouds.lab.pacmag.cz   ──▶ clouds-…-server:80  (open, http + https)
+                             ├──▶ files.lab.pacmag.cz    ──▶ /srv/files      (open, static, no backend)
                              ├──▶ home.lab.pacmag.cz     ──▶ host:8123       (own login)
                              └──▶ zigbee.lab.pacmag.cz   ──▶ host:8124       (open)
       :2222 ─────────────────────▶ forgejo (git over SSH — raw TCP, can't be proxied)
@@ -52,6 +53,7 @@ two services on this host.
 | `speedtest-tracker.service` | <https://speed.lab.pacmag.cz> | Nightly Ookla speed test, results kept forever. Ungated: the charts are readable by anyone on the LAN, its own login guards the settings — see [Speedtest Tracker](#speedtest-tracker) |
 | `clouds-over-czechoslovakia-server.service` | <https://clouds.lab.pacmag.cz> | Satellite cloud cover, served by nginx. Ungated, and also served over plain HTTP — an ESP32 e-ink display polls it and can't do TLS or log in |
 | `clouds-over-czechoslovakia.service` | — | Regenerates those artifacts; runs once per firing of `clouds-over-czechoslovakia.timer` (every 10 min), not at boot |
+| (no unit — Caddy) | <https://files.lab.pacmag.cz> | Static file server over `/var/lib/homelab/files`. The one vhost with no backend behind it: Caddy serves the directory itself. Open to read, uploads go over the host's sshd — see [Files](#files) |
 | `homeassistant.service` | <https://home.lab.pacmag.cz> | Home automation (logs users in itself). Host network |
 | `zigbee2mqtt.service` | <https://zigbee.lab.pacmag.cz> | Zigbee bridge. Host network, owns the USB dongle. **No login of its own** — see the note below |
 | `mosquitto.service` | `127.0.0.1:1883` | MQTT broker between the two. Host network, loopback only, no web UI to proxy |
@@ -136,6 +138,10 @@ There is no backup playbook here yet.
    service that has its own login but no OIDC can go either way — gated, at the
    cost of a second prompt and of any token-authenticated client, or plain,
    letting its own login do the work (Speedtest Tracker).
+
+Serving a directory rather than an app needs none of this — no container, no
+unit, no data dir of its own beyond the tree itself. See [Files](#files) for the
+shape of that.
 
 ## Forgejo Actions runners
 
@@ -329,6 +335,111 @@ None of it is direct evidence about the modem. The Kabelbox's own status page
 upstream/downstream power levels, and those are what actually degrade when a
 cable modem or the coax to it goes bad — typically well before throughput does.
 Scraping them is not wired up here.
+
+## Files
+
+<https://files.lab.pacmag.cz> serves whatever is in `/var/lib/homelab/files` to
+anyone on the LAN. There is no application behind it: the tree is bind-mounted
+read-only into the Caddy container as `/srv/files`, and the vhost is three lines
+of Caddyfile (`root` + `file_server browse`). Nothing to update, nothing to back
+up but the files, no login to seed.
+
+The two halves are split across two different doors, which is the whole idea:
+
+* **Reading is open.** No `import voidauth`, no login. Anyone who can resolve
+  the name can list and download the entire tree. Treat the directory as
+  published, not as storage.
+* **Writing is ssh.** Files go in over the host's own sshd, which never touches
+  Caddy — see [Uploading](#uploading) below. Nothing here is writable from the
+  web side: Caddy mounts the tree read-only.
+
+### Uploading
+
+The directory is owned by uid 1000, this host's `admin` login account, so
+uploads are a plain copy over the sshd that is already there — no sudo, no
+deploy step, no restart. A file is live the moment the transfer finishes, at the
+URL its path spells out: `/var/lib/homelab/files/foo/bar.png` is served at
+<https://files.lab.pacmag.cz/foo/bar.png>.
+
+```sh
+# one file  ->  https://files.lab.pacmag.cz/report.pdf
+scp report.pdf admin@192.168.0.252:/var/lib/homelab/files/
+
+# a directory, or a static site into its own subdirectory
+rsync -a --info=progress2 dist/ admin@192.168.0.252:/var/lib/homelab/files/site/
+
+# interactive
+sftp admin@192.168.0.252        # cd /var/lib/homelab/files
+```
+
+From a desktop, the same thing without a terminal: in Nautilus, Ctrl+L and
+`sftp://admin@192.168.0.252/var/lib/homelab/files`, then drag files in. Or mount
+it once and treat it as a local directory:
+
+```sh
+sshfs admin@192.168.0.252:/var/lib/homelab/files ~/mnt/labfiles
+```
+
+An alias on the client saves typing the address every time — the same shape the
+[lab README](../README.md#reaching-the-bench) uses for the bench Pi:
+
+```
+# ~/.ssh/config
+Host optiplex
+    HostName 192.168.0.252
+    User admin
+```
+
+One upload trap worth knowing before it costs an evening: `mv` from elsewhere on
+the host *preserves the file's existing SELinux label*, while `cp`, `scp` and
+`rsync` create the file fresh and it inherits `container_file_t` from the
+directory. A moved-in file therefore keeps something like `user_home_t`, which
+Caddy can't read, and the symptom is a single file 403ing in an otherwise
+working tree. The repair:
+
+```sh
+sudo chcon -R -t container_file_t /var/lib/homelab/files
+```
+
+### What it serves
+
+Caddy sets `Content-Type` from the file extension, so this is a real web server
+and not a download endpoint — a directory holding `index.html` is served as that
+page, with its `.js`, `.css` and `.wasm` loading as script, stylesheet and
+module rather than as attachments. `browse` only produces a listing for
+directories that have *no* index file, so a tree can hold static sites and loose
+files side by side: `files.lab.pacmag.cz/site/` renders, `files.lab.pacmag.cz/`
+lists.
+
+That cuts both ways, and it is the one thing worth knowing before uploading
+someone else's HTML. A page here runs its JavaScript on a `pacmag.cz` origin,
+and VoidAuth's session cookie is scoped to `pacmag.cz` (`SESSION_DOMAIN`, for
+the sake of the apex Dashy) — so a script served from this vhost is same-site
+with Grist, Forgejo, Home Assistant and the rest, and requests it makes to them
+carry your session. A separate hostname buys no isolation here; a separate
+domain would. Upload what you would run yourself.
+
+### Two things that will bite eventually
+
+* **Disk.** This tree shares a filesystem with Forgejo's git objects and the
+  Actions runners' caches, and CI churn has already filled it once — badly
+  enough that image builds failed with ENOSPC, which is why
+  `podman-prune.timer` exists. `df -h /var/lib/homelab` before uploading
+  anything large; there is no quota on this directory.
+* **Backups.** There are none, here or anywhere else on this host. Whatever
+  lands in this directory is a single copy on a single disk.
+
+### First-time setup
+
+1. Add the A record, like every other name here:
+
+   ```sh
+   ./scripts/wedos-dns.py set files.lab.pacmag.cz 192.168.0.252 --apply
+   ```
+
+2. Run `deploy_services_caddy.yml`. It creates the directory and restarts Caddy,
+   which then issues the certificate over DNS-01 — allow ~10 minutes for
+   `propagation_delay` before the name answers on HTTPS.
 
 ## Home Assistant
 

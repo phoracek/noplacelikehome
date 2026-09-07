@@ -40,6 +40,22 @@
         - /var/lib/homelab/caddy/data
         - /var/lib/homelab/caddy/config
 
+    # The file tree Caddy serves at files.lab.pacmag.cz, mounted read-only into
+    # its container. Owned by uid 1000 — this host's `admin` login account — so
+    # files can be dropped in with a plain
+    # `scp thing admin@192.168.0.252:/var/lib/homelab/files/` and no sudo.
+    #
+    # No `recurse`: this tree is meant to fill up with large files, and walking
+    # it on every deploy would cost minutes to re-assert an ownership only the
+    # top-level directory needs. Uploads carry the uploader's own.
+    - name: Ensure the served file tree exists (owned by the admin uid)
+      ansible.builtin.file:
+        path: /var/lib/homelab/files
+        state: directory
+        owner: "1000"
+        group: "1000"
+        mode: "0755"
+
     # The published ports belong to Caddy, not to generic host prep — it is the
     # only thing on this host that binds them, and they'd be dead holes in the
     # firewall without it.

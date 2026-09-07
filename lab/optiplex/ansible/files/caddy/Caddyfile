@@ -129,6 +129,34 @@ http://clouds.lab.pacmag.cz {
 	reverse_proxy clouds-over-czechoslovakia-server:80
 }
 
+# A static file server, not a proxy — the one vhost on this host with no backend
+# behind it. Caddy serves /srv/files directly, which is /var/lib/homelab/files
+# bind-mounted read-only into its container (see quadlet/caddy.container).
+#
+# Files get there over the host's own sshd — `scp thing admin@192.168.0.252:
+# /var/lib/homelab/files/` — so the write half is guarded by SSH keys and never
+# passes through Caddy at all. Which is also why the vhost is ungated: there is
+# nothing here to protect but reads, and reads are meant to be open. Anyone who
+# can resolve the name can list and download the whole tree, so only put things
+# here that everyone on the LAN may have.
+#
+# `browse` lists a directory only when it has no index file, so an uploaded
+# static site is served as a site (index.html, and Content-Type from the file
+# extension, so its .js and .css load as script and stylesheet rather than
+# downloads) while a directory of loose files gets a listing.
+#
+# The catch in serving HTML here: a page from this vhost runs its JavaScript on
+# a pacmag.cz origin, and VoidAuth's session cookie is scoped to pacmag.cz
+# (SESSION_DOMAIN — see quadlet/voidauth.container), so anything uploaded here is
+# same-site with every other service on this host and its requests to them carry
+# your session. Upload only what you'd run yourself; genuinely untrusted HTML
+# needs a different domain, not a different hostname.
+files.lab.pacmag.cz {
+	import wedos_tls
+	root * /srv/files
+	file_server browse
+}
+
 # Home Assistant and Zigbee2MQTT run with Network=host, not on the homelab
 # bridge — Home Assistant needs the host's interfaces for SSDP/mDNS device
 # discovery and Bluetooth, and Zigbee2MQTT for the USB dongle. So they have no

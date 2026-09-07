@@ -64,6 +64,16 @@ sections:
         target: newtab
         statusCheckUrl: https://clouds.lab.pacmag.cz/view-dithered.png
 
+      # Served by Caddy itself from a directory rather than proxied to a
+      # backend, so there is no health endpoint to check beyond the root
+      # listing — which is what the status check hits.
+      - title: Files
+        description: Static file server (upload over scp)
+        icon: fas fa-folder-open
+        url: https://files.lab.pacmag.cz
+        target: newtab
+        statusCheckUrl: https://files.lab.pacmag.cz
+
       - title: Home Assistant
         description: Home automation
         icon: hl-home-assistant

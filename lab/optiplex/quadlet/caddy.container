@@ -16,6 +16,15 @@ EnvironmentFile=/var/lib/homelab/caddy/wedos.env
 Volume=/var/lib/homelab/caddy/Caddyfile:/etc/caddy/Caddyfile:Z
 Volume=/var/lib/homelab/caddy/data:/data:Z
 Volume=/var/lib/homelab/caddy/config:/config:Z
+# The static tree served at files.lab.pacmag.cz. Read-only, because nothing on
+# the web side may write here: files are put in over the host's sshd (scp/sftp/
+# rsync as the admin user), never through Caddy.
+#
+# `z` rather than `Z`: `Z`'s private label carries an MCS category derived per
+# container, so it does not survive the container being recreated and Podman
+# relabels the whole tree on every start — minutes, on a directory meant to fill
+# up with large files. The shared label `z` applies is set once and stays.
+Volume=/var/lib/homelab/files:/srv/files:ro,z
 
 [Service]
 Restart=always
