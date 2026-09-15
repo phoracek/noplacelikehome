@@ -113,12 +113,18 @@ The Caddy image is built locally and has no registry copy, so auto-update skips
 it — rebuild it by re-running `deploy_services_caddy.yml` after changing the
 Containerfile or the vendored provider.
 
-`podman-prune.timer` runs `podman image prune -f` daily, removing only dangling
-images — the ones orphaned each time a `:latest` tag moves to a new build. CI
-churn on this host had otherwise filled the disk to the point where image builds
-failed with ENOSPC. Tagged images are never removed, so nothing the runners or
-the services depend on can be collected; the tradeoff is that a tagged image
-that falls out of use has to be removed by hand.
+`podman-prune.timer` runs daily to reclaim what CI churn leaves behind: stopped
+containers a crashed job forgot to remove, the anonymous volumes those
+containers held, and dangling images — the ones orphaned each time a `:latest`
+tag moves to a new build. CI churn on this host had otherwise filled the disk to
+the point where image builds failed with ENOSPC. Tagged images are never
+removed, so nothing the runners or the services depend on can be collected; the
+tradeoff is that a tagged image that falls out of use has to be removed by hand.
+
+This does not reach Forgejo's own package/container registry storage
+(`/var/lib/homelab/forgejo/gitea/packages`) — that grows independently of
+anything on this list and needs its own cleanup rules configured in Forgejo
+itself (Packages → Cleanup Rules), or old versions deleted by hand.
 
 All persistent state lives under `/var/lib/homelab/`, one directory per service.
 There is no backup playbook here yet.

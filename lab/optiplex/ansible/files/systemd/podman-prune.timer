@@ -1,5 +1,5 @@
 [Unit]
-Description=Remove dangling container images daily
+Description=Remove dangling images, orphaned volumes, and stopped containers daily
 
 [Timer]
 OnCalendar=daily

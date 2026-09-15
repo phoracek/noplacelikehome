@@ -1,9 +1,25 @@
 [Unit]
-Description=Remove dangling container images
-Documentation=man:podman-image-prune(1)
+Description=Remove dangling images, orphaned volumes, and stopped containers
+Documentation=man:podman-image-prune(1) man:podman-container-prune(1) man:podman-volume-prune(1)
 
 [Service]
 Type=oneshot
+# Containers first, then their volumes, then images — each step can only free
+# up what the previous one orphaned.
+#
+# Stopped/exited containers: act_runner normally removes each job container
+# itself when the job finishes, but a crashed or killed job can leave one
+# behind, and it (and its writable layer) then sits on disk forever with
+# nothing else ever clearing it. `container prune` only removes non-running
+# containers, so this never touches any of the always-on services.
+ExecStart=/usr/bin/podman container prune -f
+# Anonymous volumes (the per-job workspace/env volumes act_runner creates)
+# outlive the container that used them once that container is removed —
+# nothing about removing a container implies removing the volumes it
+# mounted. `volume prune` only removes volumes no container references, and
+# every service here uses bind mounts under /var/lib/homelab rather than
+# named Podman volumes, so this can't touch persistent service data.
+ExecStart=/usr/bin/podman volume prune -f
 # Deliberately no `-a`. Without it this removes only dangling (untagged)
 # images, which is exactly what accumulates here: every rebuild of a `:latest`
 # tag moves the tag to the new image and orphans the old one. Tagged images are
