@@ -112,6 +112,67 @@
         group: root
         mode: "0755"
 
+    # --- CPU/IO isolation between host services and Forgejo's CI job containers ---
+    # Forgejo Actions job containers aren't started as systemd units — act_runner
+    # creates them directly over the Podman socket, so Podman drops them into
+    # machine.slice, a *sibling* of system.slice (where every Quadlet-managed
+    # service here lives) at the cgroup root. The root cgroup splits CPU/IO
+    # between top-level slices by each slice's own weight (default 100 for
+    # both), so a service's own CPUWeight= only reshuffles priority *within*
+    # system.slice — it does nothing against machine.slice, which is the
+    # contention that actually starves things during a busy CI run.
+    #
+    # Fixed two ways: system.slice is weighted well above machine.slice's
+    # default, AND core 0 is carved out of machine.slice's cpuset entirely so
+    # CI job containers can never land on it. Home Assistant, Zigbee2MQTT, and
+    # Mosquitto pin themselves to that core in their own Quadlet units
+    # (AllowedCPUs=0), guaranteeing the zigbee dongle's process gets scheduled
+    # promptly no matter how loaded the rest of the host is.
+    #
+    # system.slice itself is deliberately left unrestricted (all 4 cores):
+    # cgroup v2 cpuset is hierarchical, so a child can only narrow its parent's
+    # allowed set, never widen it — restricting system.slice to cores 1-3 here
+    # would make the pinned services' own AllowedCPUs=0 resolve to an *empty*
+    # set (parent ∩ child) and leave them unschedulable on any CPU.
+    - name: Ensure system.slice and machine.slice drop-in directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop:
+        - /etc/systemd/system/system.slice.d
+        - /etc/systemd/system/machine.slice.d
+
+    - name: Weight system.slice above machine.slice for CPU/IO contention
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/system.slice.d/override.conf
+        content: |
+          [Slice]
+          CPUWeight=700
+          IOWeight=700
+        owner: root
+        group: root
+        mode: "0644"
+      register: system_slice_override
+
+    - name: Confine machine.slice (Forgejo job containers) off core 0
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/machine.slice.d/override.conf
+        content: |
+          [Slice]
+          AllowedCPUs=1-3
+        owner: root
+        group: root
+        mode: "0644"
+      register: machine_slice_override
+
+    - name: Reload systemd if slice overrides changed
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+      when: system_slice_override.changed or machine_slice_override.changed
+
     - name: Ensure firewalld is running
       ansible.builtin.systemd_service:
         name: firewalld

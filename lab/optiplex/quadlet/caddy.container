@@ -27,6 +27,10 @@ Volume=/var/lib/homelab/caddy/config:/config:Z
 Volume=/var/lib/homelab/files:/srv/files:ro,z
 
 [Service]
+# Weighted above the default (100) so CPU/IO contention from Forgejo's CI job
+# containers can't starve this service.
+CPUWeight=300
+IOWeight=300
 Restart=always
 
 [Install]

@@ -24,6 +24,14 @@ AddDevice=/dev/serial/by-id/usb-ITEAD_SONOFF_Zigbee_3.0_USB_Dongle_Plus_V2_20240
 Environment=TZ=Europe/Prague
 
 [Service]
+# Weighted above the default (100) so CPU/IO contention from Forgejo's CI job
+# containers can't starve this service.
+CPUWeight=300
+IOWeight=300
+# Reserved core (carved out of machine.slice in install_podman.yml)
+# so a busy CI run can never delay scheduling here — this talks to the Zigbee
+# dongle in real time, and scheduling jitter drops/delays radio frames.
+AllowedCPUs=0
 Restart=always
 
 [Install]

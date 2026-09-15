@@ -51,6 +51,10 @@ Environment=TZ=Europe/Prague
 AutoUpdate=registry
 
 [Service]
+# Weighted above the default (100) so CPU/IO contention from the Actions runner's
+# job containers can't starve the forge itself.
+CPUWeight=300
+IOWeight=300
 Restart=always
 
 [Install]

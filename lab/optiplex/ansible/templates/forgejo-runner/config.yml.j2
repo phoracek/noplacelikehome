@@ -21,6 +21,11 @@ container:
   # missing build dependency. The registry is on this host, so an unchanged
   # image costs a manifest check, not a re-download.
   force_pull: true
-  # No `options` key: the forge is on this host but is reached by its public
-  # name, which resolves to the host's LAN address, so job containers need no
-  # /etc/hosts pin to reach the server URL above or to pull from its registry.
+  # The forge is on this host but is reached by its public name, which resolves
+  # to the host's LAN address, so job containers need no /etc/hosts pin to reach
+  # the server URL above or to pull from its registry.
+  #
+  # cpu-shares below the Docker/Podman default (1024) so job containers get
+  # proportionally less CPU than the host's other services whenever there's
+  # contention — a busy CI run must not be able to starve Home Assistant et al.
+  options: --cpu-shares=128

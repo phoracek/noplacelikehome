@@ -17,6 +17,10 @@ Environment=TZ=Europe/Prague
 AutoUpdate=registry
 
 [Service]
+# Weighted above the default (100) so CPU/IO contention from Forgejo's CI job
+# containers can't starve this service.
+CPUWeight=300
+IOWeight=300
 Restart=always
 
 [Install]
