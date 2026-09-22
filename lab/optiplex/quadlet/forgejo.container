@@ -5,9 +5,9 @@ Wants=network-online.target
 
 [Container]
 # Codeberg's registry only publishes versioned tags (no :latest). The
-# major-only tag floats to the newest minor/patch in the 15.x series;
+# major-only tag floats to the newest minor/patch in the 16.x series;
 # bump the major manually when a new Forgejo major releases.
-Image=codeberg.org/forgejo/forgejo:15
+Image=codeberg.org/forgejo/forgejo:16
 ContainerName=forgejo
 # HTTP is internal-only: it joins the shared network with Caddy and publishes no
 # host port for the web UI, reachable only via Caddy at https://forge.lab.pacmag.cz.
