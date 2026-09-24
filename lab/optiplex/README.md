@@ -262,7 +262,9 @@ space in the volume group), shared with everything else. The playbook requires
 
 Nothing ever shrinks the layer store except the weekly prune (every
 Containerfile change leaves one more image version behind): `podman system
-prune --all --filter until=168h`, then `podman image prune`. The root
+prune`, which removes those superseded, now untagged, versions. It keeps
+tagged images regardless of age, because this store is the build's only layer
+cache — the workflow keeps none in the registry. The root
 `podman-prune.timer` doesn't see this store. No registry login is kept for the
 user; the workflow logs in per job with its own auth file.
 

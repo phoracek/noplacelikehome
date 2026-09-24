@@ -1,6 +1,6 @@
 [Unit]
 Description=Prune forgejo-imagebuild's rootless Podman layer store
-Documentation=man:podman-system-prune(1) man:podman-image-prune(1)
+Documentation=man:podman-system-prune(1)
 
 [Service]
 Type=oneshot
@@ -9,12 +9,10 @@ Type=oneshot
 # image version behind. The ephemeral job container used to throw all of this
 # away for free after every run.
 #
-# Everything not used by a container and older than a week — one week, not
-# two, because the store shares the host's only filesystem (/) with everything
-# else. `until` matches on image creation time, so a base image older than that
-# (fedora:44) goes too and is re-pulled by the next build — an acceptable cost
-# once a week.
-ExecStart=/usr/bin/podman system prune --all --force --filter until=168h
-# Then dangling images of any age: superseded :latest builds younger than the
-# cutoff above.
-ExecStart=/usr/bin/podman image prune --force
+# Dangling images only: each rebuild moves the image's tag to the new build and
+# leaves the old one untagged, and this collects those. Tagged images are kept
+# whatever their age — deliberately no --all. The ramus workflow has no
+# registry layer cache, so this store is the only cache it has: --all would
+# delete the current image and its base (fedora:44) once they're older than the
+# filter, and every build after that prune would start cold.
+ExecStart=/usr/bin/podman system prune --force
