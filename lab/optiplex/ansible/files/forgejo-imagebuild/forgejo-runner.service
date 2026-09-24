@@ -1,0 +1,19 @@
+[Unit]
+Description=Forgejo Actions runner for container image builds (host executor)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+# A user unit under forgejo-imagebuild's lingering user manager, not a system
+# unit with User=: rootless Podman wants the user's own systemd for its cgroups,
+# and this way the runner, its jobs and the build's RUN steps all land in
+# user-<uid>.slice, which the playbook keeps off core 0 as a whole, the way
+# machine.slice is kept off it for the docker-executor job containers.
+# XDG_RUNTIME_DIR comes from the user manager, which rootless Podman requires.
+WorkingDirectory=%h
+ExecStart=/usr/local/bin/forgejo-runner daemon --config %h/.config/forgejo-runner/config.yml
+Restart=always
+RestartSec=10s
+
+[Install]
+WantedBy=default.target

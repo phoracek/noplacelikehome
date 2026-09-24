@@ -8,9 +8,12 @@ Wants=network-online.target
 # runner binary, so it tracks the runners' version without a separate bump.
 Image=code.forgejo.org/forgejo/runner:12
 ContainerName=forgejo-cache
-# Reachable only on this private network, as http://forgejo-cache:4000/. No
-# PublishPort — nothing outside the runners has any business talking to it.
+# The containerised runners reach it on this private network, as
+# http://forgejo-cache:4000/. The image-build runner is a host process, not on
+# that network, so it gets a loopback-only port — nothing on the LAN can reach
+# it, and the firewall has no rule for 4000 anyway.
 Network=forgejo-cache.network
+PublishPort=127.0.0.1:4000:4000
 Volume=/var/lib/homelab/forgejo-cache/data:/data:Z
 Volume=/var/lib/homelab/forgejo-cache/config.yml:/etc/forgejo-cache/config.yml:ro,Z
 # Shared with every runner, hence the lowercase z (shared label, not private).

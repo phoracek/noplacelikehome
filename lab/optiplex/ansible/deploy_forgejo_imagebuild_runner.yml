@@ -1,0 +1,338 @@
+---
+# A third Forgejo Actions runner, for container image builds only
+# (petr/ramus image.yml). Unlike forgejo-runner-{1,2} it isn't a container: it's
+# the forgejo-runner binary running as the unprivileged forgejo-imagebuild user
+# with the host executor, and builds with that user's rootless Podman. That gets
+# native overlay storage and a layer store that survives between builds, where
+# the docker-executor job container had vfs and an empty store every run.
+#
+# Jobs on its label run PR-controlled code (the Containerfile's RUN steps)
+# directly on the host as forgejo-imagebuild. The user therefore gets no wheel,
+# no sudo, and no access to the rootful Podman socket (not in podman-users).
+#
+# Needs install_podman.yml (podman) and deploy_services_containerized_applications.yml
+# (the shared cache server and its secret) to have run first.
+- name: Deploy the host-executor Forgejo runner for image builds
+  hosts: server
+  become: yes
+  vars:
+    imagebuild_user: forgejo-imagebuild
+    imagebuild_home: /home/forgejo-imagebuild
+    # Same version as the runner image the docker-executor runners run.
+    imagebuild_runner_version: 12.13.2
+    imagebuild_runner_url: "https://code.forgejo.org/forgejo/runner/releases/download/v{{ imagebuild_runner_version }}/forgejo-runner-{{ imagebuild_runner_version }}-linux-amd64"
+    # Free space the layer store needs on the home filesystem; checked once,
+    # before the user exists, since the store itself eats into it afterwards.
+    # The host has one 120G disk and / is the only filesystem, so this is a
+    # floor, not comfort: the store shares / with every other service, as the
+    # vfs builds in job containers already did, and the weekly prune is what
+    # keeps it bounded.
+    imagebuild_min_free_gb: 25
+    imagebuild_configured: >-
+      {{ forgejo_imagebuild_runner is defined
+         and forgejo_imagebuild_runner.uuid != "PASTE_UUID_HERE"
+         and forgejo_imagebuild_runner.token != "PASTE_TOKEN_HERE" }}
+  tasks:
+    # --- Host prerequisites ---
+
+    - name: Require kernel 5.13+ (native rootless overlay)
+      ansible.builtin.assert:
+        that: ansible_kernel is version('5.13', '>=')
+        fail_msg: >-
+          Kernel {{ ansible_kernel }} can't mount overlay rootless; Podman would
+          fall back to vfs or fuse-overlayfs.
+
+    # AlmaLinux 9 defaults to an old nodejs stream. The host executor runs
+    # JavaScript actions (actions/checkout@v4 is node20) with the host's node.
+    - name: Enable the nodejs:22 module stream
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          if dnf -q module list --enabled nodejs 2>/dev/null | grep -Eq '^nodejs +22 '; then
+            echo unchanged
+            exit 0
+          fi
+          dnf -y module reset nodejs
+          dnf -y module enable nodejs:22
+          # Moves an already-installed older nodejs onto the new stream.
+          installed=$(rpm -qa --qf '%{NAME}\n' 'nodejs*' npm)
+          if [ -n "$installed" ]; then
+            dnf -y distro-sync $installed
+          fi
+      register: nodejs_stream
+      changed_when: "'unchanged' not in nodejs_stream.stdout"
+      when: ansible_distribution_major_version == "9"
+
+    - name: Install what host-executor jobs need
+      ansible.builtin.dnf:
+        name:
+          - podman
+          - git
+          - nodejs
+          - bash
+        state: present
+
+    # --- The user ---
+
+    - name: Check whether the user's home already exists
+      ansible.builtin.stat:
+        path: "{{ imagebuild_home }}"
+      register: imagebuild_home_stat
+
+    - name: Measure free space where the home will live
+      ansible.builtin.command:
+        cmd: df --output=avail -BG {{ imagebuild_home | dirname }}
+      register: imagebuild_home_df
+      changed_when: false
+      when: not imagebuild_home_stat.stat.exists
+
+    - name: Require enough free space for the layer store
+      ansible.builtin.assert:
+        that: (imagebuild_home_df.stdout_lines[-1] | trim | regex_replace('G$', '') | int) >= imagebuild_min_free_gb
+        fail_msg: >-
+          {{ imagebuild_home | dirname }} has
+          {{ imagebuild_home_df.stdout_lines[-1] | trim }} free; the layer store
+          needs {{ imagebuild_min_free_gb }}G. Point imagebuild_home at a bigger
+          filesystem.
+      when: not imagebuild_home_stat.stat.exists
+
+    # No groups: specifically not wheel, and not podman-users (the rootful
+    # Podman socket). nologin, since nobody logs in as it. `sudo -u` still runs
+    # commands as it, since sudo only uses the target's shell with -i or -s:
+    #   sudo -u forgejo-imagebuild XDG_RUNTIME_DIR=/run/user/<uid> podman ...
+    - name: Create the forgejo-imagebuild system user
+      ansible.builtin.user:
+        name: "{{ imagebuild_user }}"
+        system: true
+        home: "{{ imagebuild_home }}"
+        create_home: true
+        shell: /sbin/nologin
+        groups: []
+        comment: Forgejo Actions image builds (rootless Podman)
+      register: imagebuild_user_result
+
+    - name: Look up the user's uid
+      ansible.builtin.getent:
+        database: passwd
+        key: "{{ imagebuild_user }}"
+
+    - name: Record the uid and the user-manager environment
+      ansible.builtin.set_fact:
+        imagebuild_uid: "{{ ansible_facts.getent_passwd[imagebuild_user][1] }}"
+        imagebuild_env:
+          XDG_RUNTIME_DIR: "/run/user/{{ ansible_facts.getent_passwd[imagebuild_user][1] }}"
+          DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ ansible_facts.getent_passwd[imagebuild_user][1] }}/bus"
+
+    # useradd --system allocates no subordinate ids. The range starts past the
+    # highest id any existing entry (including rootful Podman's `containers`
+    # range for userns=auto) already uses, so it can't overlap.
+    - name: Give the user subordinate uid/gid ranges
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          u={{ imagebuild_user }}
+          if grep -q "^$u:" /etc/subuid && grep -q "^$u:" /etc/subgid; then
+            echo unchanged
+            exit 0
+          fi
+          start=$(cat /etc/subuid /etc/subgid 2>/dev/null \
+            | awk -F: 'BEGIN { m = 200000 } { e = $2 + $3; if (e > m) m = e } END { print m }')
+          usermod --add-subuids "$start-$((start + 65535))" \
+                  --add-subgids "$start-$((start + 65535))" "$u"
+      register: imagebuild_subids
+      changed_when: "'unchanged' not in imagebuild_subids.stdout"
+
+    - name: Enable lingering, so the user manager and /run/user/<uid> exist without a login
+      ansible.builtin.command:
+        cmd: loginctl enable-linger {{ imagebuild_user }}
+        creates: /var/lib/systemd/linger/{{ imagebuild_user }}
+
+    - name: Wait for the user manager's bus
+      ansible.builtin.wait_for:
+        path: "/run/user/{{ imagebuild_uid }}/bus"
+        timeout: 30
+
+    # The user manager lives in user-<uid>.slice, so the runner, its jobs and
+    # every build step inherit this. It keeps a build off core 0 the same way
+    # machine.slice's override keeps the docker-executor job containers off it
+    # (install_podman.yml), so the services pinned there stay responsive. Its
+    # CPU/IO weight needs nothing: user.slice already sits at the default 100,
+    # below system.slice's 700.
+    - name: Ensure the user slice drop-in directory exists
+      ansible.builtin.file:
+        path: "/etc/systemd/system/user-{{ imagebuild_uid }}.slice.d"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Confine the user's slice off core 0
+      ansible.builtin.copy:
+        dest: "/etc/systemd/system/user-{{ imagebuild_uid }}.slice.d/override.conf"
+        content: |
+          [Slice]
+          AllowedCPUs=1-3
+        owner: root
+        group: root
+        mode: "0644"
+      register: imagebuild_slice
+
+    - name: Apply the slice override
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+      when: imagebuild_slice.changed
+
+    # --- Rootless Podman ---
+
+    - name: Ensure the user's config directories exist
+      ansible.builtin.file:
+        path: "{{ imagebuild_home }}/{{ item }}"
+        state: directory
+        owner: "{{ imagebuild_user }}"
+        group: "{{ imagebuild_user }}"
+        mode: "0700"
+      loop:
+        - .config
+        - .config/containers
+        - .config/forgejo-runner
+        - .config/systemd
+        - .config/systemd/user
+        - .cache
+        - .cache/act
+
+    - name: Pin native overlay for the user's layer store
+      ansible.builtin.copy:
+        src: files/forgejo-imagebuild/storage.conf
+        dest: "{{ imagebuild_home }}/.config/containers/storage.conf"
+        owner: "{{ imagebuild_user }}"
+        group: "{{ imagebuild_user }}"
+        mode: "0644"
+      register: imagebuild_storage_conf
+
+    - name: Let rootless Podman pick up new subordinate ids or storage config
+      ansible.builtin.command:
+        cmd: podman system migrate
+      become_user: "{{ imagebuild_user }}"
+      environment: "{{ imagebuild_env }}"
+      when: imagebuild_subids.changed or imagebuild_storage_conf.changed
+
+    - name: Read the user's Podman storage info
+      ansible.builtin.command:
+        cmd: podman info --format json
+      become_user: "{{ imagebuild_user }}"
+      environment: "{{ imagebuild_env }}"
+      register: imagebuild_podman_info
+      changed_when: false
+
+    - name: Require native overlay (not vfs, not fuse-overlayfs)
+      ansible.builtin.assert:
+        that:
+          - (imagebuild_podman_info.stdout | from_json).store.graphDriverName == 'overlay'
+          - "'overlay.mount_program' not in ((imagebuild_podman_info.stdout | from_json).store.graphOptions | default({}, true))"
+        fail_msg: >-
+          Rootless storage is
+          {{ (imagebuild_podman_info.stdout | from_json).store.graphDriverName }}
+          with options {{ (imagebuild_podman_info.stdout | from_json).store.graphOptions }}.
+        success_msg: >-
+          Storage driver {{ (imagebuild_podman_info.stdout | from_json).store.graphDriverName }},
+          graph root {{ (imagebuild_podman_info.stdout | from_json).store.graphRoot }}.
+
+    - name: Smoke-test a rootless container
+      ansible.builtin.command:
+        cmd: podman run --rm registry.fedoraproject.org/fedora:44 true
+      become_user: "{{ imagebuild_user }}"
+      environment: "{{ imagebuild_env }}"
+      changed_when: false
+
+    # --- The runner ---
+
+    - name: Install forgejo-runner v{{ imagebuild_runner_version }}
+      ansible.builtin.get_url:
+        url: "{{ imagebuild_runner_url }}"
+        checksum: "sha256:{{ imagebuild_runner_url }}.sha256"
+        dest: /usr/local/bin/forgejo-runner
+        owner: root
+        group: root
+        mode: "0755"
+      notify: Restart imagebuild runner
+
+    # The cache proxy authenticates to the shared cache server with the secret
+    # the docker-executor runners use; this is a copy the user can read.
+    - name: Give the runner a copy of the shared cache secret
+      ansible.builtin.copy:
+        src: /var/lib/homelab/forgejo-cache/secret
+        remote_src: true
+        dest: "{{ imagebuild_home }}/.config/forgejo-runner/cache-secret"
+        owner: "{{ imagebuild_user }}"
+        group: "{{ imagebuild_user }}"
+        mode: "0600"
+      notify: Restart imagebuild runner
+
+    # Holds the uuid/token, so templated from the gitignored group_vars at 0600.
+    - name: Install the runner's config.yml (skipped while the credentials are placeholders)
+      ansible.builtin.template:
+        src: templates/forgejo-imagebuild/config.yml.j2
+        dest: "{{ imagebuild_home }}/.config/forgejo-runner/config.yml"
+        owner: "{{ imagebuild_user }}"
+        group: "{{ imagebuild_user }}"
+        mode: "0600"
+      when: imagebuild_configured | bool
+      notify: Restart imagebuild runner
+      no_log: true
+
+    - name: Install the user units
+      ansible.builtin.copy:
+        src: "files/forgejo-imagebuild/{{ item }}"
+        dest: "{{ imagebuild_home }}/.config/systemd/user/{{ item }}"
+        owner: "{{ imagebuild_user }}"
+        group: "{{ imagebuild_user }}"
+        mode: "0644"
+      loop:
+        - forgejo-runner.service
+        - podman-prune.service
+        - podman-prune.timer
+      register: imagebuild_units
+      notify: Restart imagebuild runner
+
+    - name: Reload the user manager
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+        scope: user
+      become_user: "{{ imagebuild_user }}"
+      environment: "{{ imagebuild_env }}"
+      when: imagebuild_units.changed
+
+    - name: Enable and start the weekly layer store prune
+      ansible.builtin.systemd_service:
+        name: podman-prune.timer
+        scope: user
+        enabled: true
+        state: started
+      become_user: "{{ imagebuild_user }}"
+      environment: "{{ imagebuild_env }}"
+
+    - name: Enable and start the runner once its credentials are configured
+      ansible.builtin.systemd_service:
+        name: forgejo-runner.service
+        scope: user
+        enabled: true
+        state: started
+      become_user: "{{ imagebuild_user }}"
+      environment: "{{ imagebuild_env }}"
+      when: imagebuild_configured | bool
+      register: imagebuild_runner_started
+
+  handlers:
+    # A restart cancels the build in flight. Skipped for a runner this run just
+    # started, which already read the new files — same reasoning as the
+    # docker-executor runners in deploy_services_containerized_applications.yml.
+    - name: Restart imagebuild runner
+      ansible.builtin.systemd_service:
+        name: forgejo-runner.service
+        scope: user
+        state: restarted
+      become_user: "{{ imagebuild_user }}"
+      environment: "{{ imagebuild_env }}"
+      when:
+        - imagebuild_configured | bool
+        - not (imagebuild_runner_started.changed | default(false))

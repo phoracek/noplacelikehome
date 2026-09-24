@@ -1,0 +1,30 @@
+log:
+  level: info
+
+server:
+  connections:
+    forgejo:
+      url: https://forge.lab.pacmag.cz/
+      uuid: {{ forgejo_imagebuild_runner.uuid }}
+      token: {{ forgejo_imagebuild_runner.token }}
+
+runner:
+  # One build at a time: concurrent builds would contend on the shared layer
+  # store, which is the whole point of this runner.
+  capacity: 1
+  # The :host suffix selects the host executor — jobs run directly as
+  # forgejo-imagebuild with rootless Podman, not in a job container.
+  labels:
+    - image-build:host
+
+cache:
+  enabled: true
+  # The same shared cache server as the docker-executor runners, but they reach
+  # it by name on the private forgejo-cache network. This daemon is a host
+  # process, not on that network, so it goes through the loopback port
+  # forgejo-cache.container publishes for it. The trailing slash is required.
+  external_server: http://127.0.0.1:4000/
+  secret_url: file:{{ imagebuild_home }}/.config/forgejo-runner/cache-secret
+
+host:
+  workdir_parent: {{ imagebuild_home }}/.cache/act

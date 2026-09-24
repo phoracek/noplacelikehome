@@ -58,6 +58,7 @@ two services on this host.
 | `zigbee2mqtt.service` | <https://zigbee.lab.pacmag.cz> | Zigbee bridge. Host network, owns the USB dongle. **No login of its own** — see the note below |
 | `mosquitto.service` | `127.0.0.1:1883` | MQTT broker between the two. Host network, loopback only, no web UI to proxy |
 | `forgejo-runner-1.service`, `forgejo-runner-2.service` | (workers, no UI) | Forgejo Actions runners — one systemd unit per entry in `forgejo_runners`. They serve the forge on this same host |
+| `forgejo-runner.service` (user unit of `forgejo-imagebuild`) | (worker, no UI) | Host-executor runner for container image builds on `petr/ramus` — not a container; see [Image-build runner](#image-build-runner) |
 | `forgejo-cache.service` | `http://forgejo-cache:4000/` (runners only) | Actions cache server shared by the runners. Only on the private `forgejo-cache` Podman network, no host port — see [Shared Actions cache](#shared-actions-cache) |
 
 Every hostname above is an A record pointing at `192.168.0.252`.
@@ -210,7 +211,9 @@ when it landed on the runner that saved the entry.
 
 * The cache server and the runners are on a private Podman network,
   `forgejo-cache`, and the runners reach it as `http://forgejo-cache:4000/`
-  (`cache.external_server` in `config.yml.j2`). It publishes no host port.
+  (`cache.external_server` in `config.yml.j2`). The image-build runner is a
+  host process, not on that network, so the server also publishes
+  `127.0.0.1:4000` for it — loopback only.
 * Each runner still runs its own cache *proxy*: job containers talk to the
   proxy, and the proxy forwards to the server. The runner and the server
   authenticate to each other with a shared secret. Ansible generates it once, at
@@ -224,6 +227,58 @@ when it landed on the runner that saved the entry.
 ```sh
 sudo journalctl -u forgejo-cache -f       # "cache server is listening on …"
 sudo podman exec forgejo-runner-1 wget -S -O /dev/null http://forgejo-cache:4000/   # any HTTP status = reachable
+```
+
+### Image-build runner
+
+A third runner, only for `petr/ramus`'s `image.yml`, which builds the CI image
+(`forge.lab.pacmag.cz/petr/ramus/agentic`). In a docker-executor job container
+that build ran Podman on vfs with an empty layer store every time: 23 min fully
+cached, 63 min cold, and the vfs store has filled the disk. This runner is the
+`forgejo-runner` binary running as the `forgejo-imagebuild` system user with the
+**host executor** (label `image-build:host`), building with that user's rootless
+Podman: native kernel overlay, and a layer store in
+`~forgejo-imagebuild/.local/share/containers` that persists between builds.
+
+Deployed by `deploy_forgejo_imagebuild_runner.yml` (part of
+`deploy_services.yml`). It creates the user with subordinate id ranges and
+lingering, installs podman/git/nodejs 22 and the pinned `forgejo-runner` binary
+to `/usr/local/bin`, pins `overlay` in the user's `storage.conf`, asserts
+kernel ≥ 5.13 and that the driver really is native overlay, smoke-tests a
+container, then installs `forgejo-runner.service` and a weekly
+`podman-prune.timer` as **user units** of `forgejo-imagebuild`. Being a user
+unit, the whole build runs in `user-<uid>.slice`, which gets the same core 0
+carve-out as `machine.slice`.
+
+Registration: the runner is scoped to the repository, so create it at
+**petr/ramus → Settings → Actions → Runners → "Create new runner"**, put the
+UUID + token into `forgejo_imagebuild_runner` in `group_vars/server.yml`, and
+re-run the playbook. `capacity: 1` — concurrent builds would contend on the one
+layer store.
+
+The store lives on `/`, the host's only filesystem (one 120 GB disk, no free
+space in the volume group), shared with everything else. The playbook requires
+25 GB free before creating the user.
+
+Nothing ever shrinks the layer store except the weekly prune (every
+Containerfile change leaves one more image version behind): `podman system
+prune --all --filter until=168h`, then `podman image prune`. The root
+`podman-prune.timer` doesn't see this store. No registry login is kept for the
+user; the workflow logs in per job with its own auth file.
+
+**Security.** Jobs on `image-build:host` run PR-controlled code (the
+Containerfile's `RUN` steps) directly on the host as `forgejo-imagebuild` — not
+in a container. Acceptable on this private forge because only `image.yml` targets
+the label. The user has no wheel, no sudo, and isn't in `podman-users`, so it
+can't reach the rootful Podman socket. It can read its own runner token and the
+shared cache secret, and — being a lingering user — could leave user units
+behind; don't point untrusted repositories at this label.
+
+```sh
+sudo systemctl --user -M forgejo-imagebuild@ status forgejo-runner podman-prune.timer
+sudo journalctl _UID=$(id -u forgejo-imagebuild) -f
+sudo -u forgejo-imagebuild XDG_RUNTIME_DIR=/run/user/$(id -u forgejo-imagebuild) podman system df
+df -h ~forgejo-imagebuild
 ```
 
 ### Daily ops

@@ -103,3 +103,12 @@ forgejo_runners:
   - name: forgejo-runner-2
     uuid: "PASTE_UUID_HERE"
     token: "PASTE_TOKEN_HERE"
+
+# The image-build runner (deploy_forgejo_imagebuild_runner.yml) — a host-executor
+# runner scoped to the petr/ramus repository, not the whole instance. Get its
+# uuid + token from https://forge.lab.pacmag.cz/petr/ramus/settings/actions/runners
+# → "Create new runner". Left on the placeholders, the playbook still prepares
+# the user and rootless Podman but writes no config.yml and starts no runner.
+forgejo_imagebuild_runner:
+  uuid: "PASTE_UUID_HERE"
+  token: "PASTE_TOKEN_HERE"
