@@ -1,0 +1,11 @@
+# Config for `forgejo-runner cache-server` (forgejo-cache.container). Only the
+# cache: section is read.
+cache:
+  dir: /data
+  # Bind address inside the container; the network it's on is private to the
+  # runners, so all interfaces is fine.
+  host: 0.0.0.0
+  port: 4000
+  # Without a secret the cache server refuses to start. Every runner's
+  # config.yml points at this same file.
+  secret_url: file:/etc/forgejo-runner/cache-secret

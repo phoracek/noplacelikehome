@@ -58,6 +58,7 @@ two services on this host.
 | `zigbee2mqtt.service` | <https://zigbee.lab.pacmag.cz> | Zigbee bridge. Host network, owns the USB dongle. **No login of its own** — see the note below |
 | `mosquitto.service` | `127.0.0.1:1883` | MQTT broker between the two. Host network, loopback only, no web UI to proxy |
 | `forgejo-runner-1.service`, `forgejo-runner-2.service` | (workers, no UI) | Forgejo Actions runners — one systemd unit per entry in `forgejo_runners`. They serve the forge on this same host |
+| `forgejo-cache.service` | `http://forgejo-cache:4000/` (runners only) | Actions cache server shared by the runners. Only on the private `forgejo-cache` Podman network, no host port — see [Shared Actions cache](#shared-actions-cache) |
 
 Every hostname above is an A record pointing at `192.168.0.252`.
 
@@ -200,6 +201,31 @@ socket, which takes two things (both in `install_podman.yml`):
 `sudo podman inspect forgejo-runner-1 --format '{{.ProcessLabel}}'` should show
 `container_runtime_t`.
 
+### Shared Actions cache
+
+The runners share one cache server, `forgejo-cache.service`: the runner image's
+`forgejo-runner cache-server` subcommand, run as its own container. Left to
+itself each runner starts a private cache server, so a job only got a cache hit
+when it landed on the runner that saved the entry.
+
+* The cache server and the runners are on a private Podman network,
+  `forgejo-cache`, and the runners reach it as `http://forgejo-cache:4000/`
+  (`cache.external_server` in `config.yml.j2`). It publishes no host port.
+* Each runner still runs its own cache *proxy*: job containers talk to the
+  proxy, and the proxy forwards to the server. The runner and the server
+  authenticate to each other with a shared secret. Ansible generates it once, at
+  `/var/lib/homelab/forgejo-cache/secret`, and bind-mounts it into all three
+  containers. To rotate it, delete the file, redeploy, and restart the cache
+  server and both runners.
+* Entries live in `/var/lib/homelab/forgejo-cache/data/`, and the server evicts
+  old entries itself. Like the rest of the runner state, it's safe to lose: the
+  next run is a cold build that refills it.
+
+```sh
+sudo journalctl -u forgejo-cache -f       # "cache server is listening on …"
+sudo podman exec forgejo-runner-1 wget -S -O /dev/null http://forgejo-cache:4000/   # any HTTP status = reachable
+```
+
 ### Daily ops
 
 ```sh
@@ -241,10 +267,10 @@ with (set in `ansible/templates/forgejo-runner/config.yml.j2`).
 `actions/checkout@v4` resolves via
 `FORGEJO__actions__DEFAULT_ACTIONS_URL=https://code.forgejo.org`.
 
-Each runner's state (`config.yml` + workdir/cache) lives at
-`/var/lib/homelab/<runner-name>/`. Only the `config.yml` is worth anything on
-restore — the rest is Actions cache and workflow workdirs, regenerated on the
-next run.
+Each runner's state (`config.yml` + workdirs) lives at
+`/var/lib/homelab/<runner-name>/`, and the shared Actions cache at
+`/var/lib/homelab/forgejo-cache/`. Only the `config.yml` is worth anything on
+restore — the rest is regenerated on the next run.
 
 ## Speedtest Tracker
 
@@ -428,7 +454,7 @@ domain would. Upload what you would run yourself.
 ### Two things that will bite eventually
 
 * **Disk.** This tree shares a filesystem with Forgejo's git objects and the
-  Actions runners' caches, and CI churn has already filled it once — badly
+  Actions cache, and CI churn has already filled it once — badly
   enough that image builds failed with ENOSPC, which is why
   `podman-prune.timer` exists. `df -h /var/lib/homelab` before uploading
   anything large; there is no quota on this directory.

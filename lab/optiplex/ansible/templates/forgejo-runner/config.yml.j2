@@ -13,6 +13,16 @@ runner:
     - docker:docker://node:20-bookworm
     - ubuntu-latest:docker://node:20-bookworm
 
+cache:
+  enabled: true
+  # One cache server (forgejo-cache.container) shared by every runner, instead
+  # of each runner spawning its own: with per-runner stores a job only got a
+  # cache hit when it landed on the runner that saved the entry. The trailing
+  # slash is required. Each runner still runs its own cache proxy, which is
+  # what job containers talk to; host/proxy_port stay auto-detected.
+  external_server: http://forgejo-cache:4000/
+  secret_url: file:/etc/forgejo-runner/cache-secret
+
 container:
   # Re-pull the job image on every run instead of trusting the host's cached
   # copy. Workflows reference `:latest` tags in this forge's own registry, so a

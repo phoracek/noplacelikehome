@@ -1,0 +1,5 @@
+[Unit]
+Description=Private network between the Forgejo Actions runners and their shared cache server
+
+[Network]
+NetworkName=forgejo-cache

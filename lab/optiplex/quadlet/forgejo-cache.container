@@ -1,0 +1,28 @@
+[Unit]
+Description=Forgejo Actions cache server shared by all runners
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+# Same image as the runners: the standalone cache server is a subcommand of the
+# runner binary, so it tracks the runners' version without a separate bump.
+Image=code.forgejo.org/forgejo/runner:12
+ContainerName=forgejo-cache
+# Reachable only on this private network, as http://forgejo-cache:4000/. No
+# PublishPort — nothing outside the runners has any business talking to it.
+Network=forgejo-cache.network
+Volume=/var/lib/homelab/forgejo-cache/data:/data:Z
+Volume=/var/lib/homelab/forgejo-cache/config.yml:/etc/forgejo-cache/config.yml:ro,Z
+# Shared with every runner, hence the lowercase z (shared label, not private).
+Volume=/var/lib/homelab/forgejo-cache/secret:/etc/forgejo-runner/cache-secret:ro,z
+Environment=TZ=Europe/Prague
+# Settings come from the config file rather than flags so the secret is read
+# from its file and never appears on a command line (ps, podman inspect).
+Exec=forgejo-runner cache-server --config /etc/forgejo-cache/config.yml
+AutoUpdate=registry
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=multi-user.target default.target
