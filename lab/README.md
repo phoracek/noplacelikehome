@@ -61,8 +61,9 @@ sudo nmcli device reapply <iface>
 the live interface. `ip route get 192.168.90.2` should then say
 `via 192.168.0.2`.
 
-The OptiPlex gets its bench route through `configure_network.yml`, which is
-what lets the Forgejo Actions runners there drive the bench. optiplex-2 needs
+The OptiPlex gets both routes through `configure_network.yml`: the bench one
+is what lets the Forgejo Actions runners there drive the bench, the optiplex-2
+one is what lets its Caddy proxy services running on optiplex-2. optiplex-2 needs
 no route of its own: its default gateway is the MikroTik, which is directly
 attached to the bench net.
 
@@ -91,13 +92,15 @@ The access model:
   to optiplex-2.
 - Home LAN → optiplex-2: everything. It is a server whose services are meant
   to be reached from the LAN; which ports actually answer is up to its own
-  firewalld.
+  firewalld. Services with no login of their own (Glances) admit only the
+  OptiPlex, whose Caddy gates them with VoidAuth.
 - optiplex-2 → bench net: the same as the home LAN — SSH, the coordinator and
   ping — so runners there can drive the bench.
-- optiplex-2 → home LAN: HTTPS to the OptiPlex (`192.168.0.252:443`) only.
-  That is Caddy, so the forge — `forge.lab.pacmag.cz` resolves to that
-  address — its container registry and the other vhosts; the runners can't
-  register, clone or pull without it. Nothing else on the home LAN.
+- optiplex-2 → home LAN: the OptiPlex (`192.168.0.252`) on HTTPS (443) and
+  git over SSH (2222) only. 443 is Caddy, so the forge — `forge.lab.pacmag.cz`
+  resolves to that address — its container registry and the other vhosts; the
+  runners can't register, clone or pull without it. 2222 is Forgejo's SSH, for
+  cloning and pushing from the dev account. Nothing else on the home LAN.
 - optiplex-2 → anywhere else: internet egress only.
 - Bench net and optiplex-2 → the router itself: DHCP, DNS and ping only. The
   management interfaces (WinBox, WebFig, SSH, MAC-level access) are closed to
@@ -234,8 +237,8 @@ add place-before=$lanDrop chain=input in-interface=ether4 protocol=tcp dst-port=
 
 Forwarding. The two bench rules go above the bench's own `nothing else
 reaches the network` drop — below it they would never match — and the rest
-follows the same pattern as the bench block, with the OptiPlex HTTPS accept
-slotted in ahead of the →home drop:
+follows the same pattern as the bench block, with the OptiPlex HTTPS and git-over-SSH
+accepts slotted in ahead of the →home drop:
 
 ```
 {
@@ -247,6 +250,7 @@ add place-before=$benchDrop chain=forward src-address=192.168.90.0/24 dst-addres
 add place-before=$wanDrop chain=forward src-address=192.168.0.0/24 dst-address=192.168.90.0/24 action=accept comment="optiplex-2: everything from the home LAN"
 add place-before=$wanDrop chain=forward dst-address=192.168.90.0/24 action=drop comment="optiplex-2: nothing else reaches it"
 add place-before=$wanDrop chain=forward src-address=192.168.90.0/24 dst-address=192.168.0.252 protocol=tcp dst-port=443 action=accept comment="optiplex-2: forge and Caddy vhosts on the OptiPlex"
+add place-before=$wanDrop chain=forward src-address=192.168.90.0/24 dst-address=192.168.0.252 protocol=tcp dst-port=2222 action=accept comment="optiplex-2: git over SSH to the forge"
 add place-before=$wanDrop chain=forward src-address=192.168.90.0/24 dst-address=192.168.0.0/24 action=drop comment="optiplex-2: no other traffic to the home LAN"
 add place-before=$wanDrop chain=forward src-address=192.168.90.0/24 out-interface-list=WAN action=accept comment="optiplex-2: internet egress"
 add place-before=$wanDrop chain=forward src-address=192.168.90.0/24 action=drop comment="optiplex-2: no traffic to other local networks"

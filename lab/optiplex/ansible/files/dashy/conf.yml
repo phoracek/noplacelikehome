@@ -34,9 +34,15 @@ sections:
         statusCheckUrl: https://forge.lab.pacmag.cz/api/v1/version
 
       - title: Glances
-        description: Host system monitor
+        description: Host system monitor — OptiPlex
         icon: hl-glances
         url: https://glances.lab.pacmag.cz
+        target: newtab
+
+      - title: Glances (optiplex-2)
+        description: Host system monitor — optiplex-2
+        icon: hl-glances
+        url: https://glances.optiplex-2.lab.pacmag.cz
         target: newtab
 
       # Grist isn't in the homelab-svg-assets set (hl-) the other tiles use, so

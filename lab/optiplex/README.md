@@ -12,7 +12,8 @@ it drives — are in the [lab README](../README.md).
    [ OptiPlex ]  192.168.0.252
       :80  :443  ──▶ Caddy ──┬──▶ auth.lab.pacmag.cz     ──▶ voidauth:3000
                              ├──▶ lab.pacmag.cz          ──▶ dashy:8080     ┐ gated by
-                             ├──▶ glances.lab.pacmag.cz  ──▶ glances:61208  ┘ forward_auth
+                             ├──▶ glances.lab.pacmag.cz  ──▶ glances:61208  │ forward_auth
+                             ├──▶ glances.optiplex-2.lab.pacmag.cz ──▶ 192.168.90.2:61208 ┘
                              ├──▶ grist.lab.pacmag.cz    ──▶ grist:8484      (own OIDC login)
                              ├──▶ forge.lab.pacmag.cz    ──▶ forgejo:3000    (own OIDC login)
                              ├──▶ speed.lab.pacmag.cz    ──▶ speedtest-…:80  (charts open, own login to act)
@@ -47,6 +48,7 @@ two services on this host.
 | `caddy.service`    | — | TLS ingress, binds 80/443 |
 | `voidauth.service` | <https://auth.lab.pacmag.cz> | Single sign-on provider and login portal |
 | `glances.service`  | <https://glances.lab.pacmag.cz> | Host system monitor (no login of its own — gated by VoidAuth) |
+| — (runs on optiplex-2) | <https://glances.optiplex-2.lab.pacmag.cz> | optiplex-2's system monitor, proxied here and gated by VoidAuth — see [optiplex-2](../optiplex-2/README.md#glances) |
 | `dashy.service`    | <https://lab.pacmag.cz> | Service dashboard (no login of its own — gated by VoidAuth) |
 | `grist.service`    | <https://grist.lab.pacmag.cz> | Spreadsheet / database (logs users in itself, via OIDC against VoidAuth) |
 | `forgejo.service`  | <https://forge.lab.pacmag.cz> | Git forge, container registry and CI (logs users in itself, via OIDC against VoidAuth). Also binds host port 2222 for git-over-SSH |
@@ -89,9 +91,10 @@ The first five are host setup and only need re-running to change the host itself
 `configure_network.yml` sets the hostname and owns the NetworkManager profile's
 static routes — the `static_routes` list at the top of that playbook is the only
 place to add one, since it is written wholesale and overwrites anything set on
-the profile by hand. Today it carries a single route, `192.168.89.0/24` via
-`192.168.0.2`, which is this host's way onto the [bench
-network](../README.md#reaching-the-networks-behind-the-mikrotik).
+the profile by hand. Today it carries two routes via `192.168.0.2`:
+`192.168.89.0/24`, this host's way onto the bench network, and
+`192.168.90.0/24`, which Caddy uses to reach optiplex-2 (see the [lab
+README](../README.md#reaching-the-networks-behind-the-mikrotik)).
 `deploy_services.yml` is the entry point for the stack: it deploys the
 containerised backends and the shared network first, then Caddy last, so no vhost
 forwards to a backend that isn't up yet. Each imported playbook also runs on its

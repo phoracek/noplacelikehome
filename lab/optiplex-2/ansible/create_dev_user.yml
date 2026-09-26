@@ -1,0 +1,29 @@
+---
+# The account for using this host as a dev box. It logs in with the same key
+# as the other accounts and has no sudo — administering the host is what
+# `admin` and `ansible` are for. Its home, and with it its rootless Podman
+# storage, is under /home, i.e. on /srv (configure_storage.yml must run first).
+- name: Create the dev user
+  hosts: server
+  become: yes
+  vars:
+    dev_user: petr
+  tasks:
+    - name: Create the user
+      ansible.builtin.user:
+        name: "{{ dev_user }}"
+        shell: /bin/bash
+        state: present
+
+    - name: Authorize the key
+      ansible.posix.authorized_key:
+        user: "{{ dev_user }}"
+        state: present
+        key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
+
+    # Without lingering the user's systemd instance — and every rootless
+    # container and user service under it — is stopped at logout.
+    - name: Keep the user's services running without a login session
+      ansible.builtin.command:
+        cmd: loginctl enable-linger {{ dev_user }}
+        creates: /var/lib/systemd/linger/{{ dev_user }}

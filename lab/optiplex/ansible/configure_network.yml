@@ -8,6 +8,7 @@
     # "<destination CIDR> <next hop>".
     static_routes:
       - "192.168.89.0/24 192.168.0.2"
+      - "192.168.90.0/24 192.168.0.2"
   tasks:
     - name: Set a hostname
       ansible.builtin.hostname:

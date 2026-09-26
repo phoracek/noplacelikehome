@@ -1,0 +1,46 @@
+---
+# Glances, served through the OptiPlex's Caddy at
+# https://glances.optiplex-2.lab.pacmag.cz (see ../README.md#glances).
+- name: Deploy Glances
+  hosts: server
+  become: yes
+  vars:
+    quadlet_dir: /etc/containers/systemd
+    # The only client allowed to reach Glances: Caddy on the OptiPlex, which puts
+    # VoidAuth in front of it. Its traffic reaches this host unmasqueraded, so
+    # this is the address firewalld sees.
+    glances_proxy: 192.168.0.252
+  tasks:
+    - name: Install the Glances Quadlet unit
+      ansible.builtin.copy:
+        src: ../quadlet/glances.container
+        dest: "{{ quadlet_dir }}/glances.container"
+        owner: root
+        group: root
+        mode: '0644'
+      register: glances_unit
+
+    # Quadlet generates glances.service from the unit file on daemon-reload.
+    - name: Reload systemd so Quadlet regenerates the unit
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+      when: glances_unit is changed
+
+    - name: Start Glances
+      ansible.builtin.systemd_service:
+        name: glances.service
+        state: "{{ 'restarted' if glances_unit is changed else 'started' }}"
+
+    - name: Open 61208 to the OptiPlex's Caddy only
+      ansible.posix.firewalld:
+        rich_rule: rule family="ipv4" source address="{{ glances_proxy }}" port port="61208" protocol="tcp" accept
+        permanent: true
+        immediate: true
+        state: enabled
+
+    # AutoUpdate=registry in the unit only takes effect with this timer running.
+    - name: Enable the podman auto-update timer
+      ansible.builtin.systemd_service:
+        name: podman-auto-update.timer
+        state: started
+        enabled: true

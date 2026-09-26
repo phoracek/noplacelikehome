@@ -3,5 +3,5 @@
 # (The full `ansible` package already bundles these; this is for hosts that
 # installed ansible-core only.)
 collections:
-  - name: ansible.posix     # authorized_key (create_ansible_user.yml), mount (configure_storage.yml)
+  - name: ansible.posix     # authorized_key (create_*_user.yml), mount (configure_storage.yml)
   - name: community.general # ini_file, used by install_dnf_automatic.yml
