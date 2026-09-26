@@ -1,7 +1,8 @@
 [Unit]
 Description=Forgejo Actions runner ({{ runner.name }})
-# No ordering against forgejo.service: the runner retries its connection until
-# the forge answers, so a boot race just costs a few seconds of reconnecting.
+# No ordering against forgejo.service: the forge is reached through Caddy, and
+# until Forgejo answers there the runner's first call gets a 502 and it exits.
+# RestartSec below makes systemd retry it until the forge is up.
 After=network-online.target podman.socket forgejo-cache.service
 Wants=network-online.target forgejo-cache.service
 Requires=podman.socket
@@ -42,6 +43,9 @@ AutoUpdate=registry
 
 [Service]
 Restart=always
+# Without a delay the five restarts of systemd's default start limit burn out
+# within a second of a boot, before Forgejo is up, and the unit stays failed.
+RestartSec=10s
 
 [Install]
 WantedBy=multi-user.target default.target
