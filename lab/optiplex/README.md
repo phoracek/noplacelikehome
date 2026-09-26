@@ -91,7 +91,7 @@ static routes — the `static_routes` list at the top of that playbook is the on
 place to add one, since it is written wholesale and overwrites anything set on
 the profile by hand. Today it carries a single route, `192.168.89.0/24` via
 `192.168.0.2`, which is this host's way onto the [bench
-network](../README.md#reaching-the-bench).
+network](../README.md#reaching-the-networks-behind-the-mikrotik).
 `deploy_services.yml` is the entry point for the stack: it deploys the
 containerised backends and the shared network first, then Caddy last, so no vhost
 forwards to a backend that isn't up yet. Each imported playbook also runs on its
@@ -470,7 +470,7 @@ sshfs admin@192.168.0.252:/var/lib/homelab/files ~/mnt/labfiles
 ```
 
 An alias on the client saves typing the address every time — the same shape the
-[lab README](../README.md#reaching-the-bench) uses for the bench Pi:
+[lab README](../README.md#reaching-the-networks-behind-the-mikrotik) uses for the bench Pi:
 
 ```
 # ~/.ssh/config

@@ -1,0 +1,31 @@
+---
+- name: Install automatic updates
+  hosts: server
+  become: yes
+  tasks:
+    - name: Install dnf-automatic
+      ansible.builtin.dnf:
+        name: dnf-automatic
+        state: latest
+
+    # Out of the box dnf-automatic.timer only downloads updates
+    # (apply_updates = no). Installing them is what keeps the host patched,
+    # and rebooting when an update needs it (kernel, glibc, systemd, ...) is
+    # what makes those take effect. A reboot kills any CI job running at that
+    # moment; Forgejo marks it failed and it can be re-run.
+    - name: Apply updates and reboot when they need it
+      community.general.ini_file:
+        path: /etc/dnf/automatic.conf
+        section: commands
+        option: "{{ item.option }}"
+        value: "{{ item.value }}"
+        mode: '0644'
+      loop:
+        - { option: apply_updates, value: "yes" }
+        - { option: reboot, value: when-needed }
+
+    - name: Enable a timer unit for dnf-automatic
+      ansible.builtin.systemd_service:
+        name: dnf-automatic.timer
+        state: started
+        enabled: true

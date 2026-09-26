@@ -1,0 +1,69 @@
+---
+# Bind-mounts {{ bind.src }} onto {{ bind.dst }}, with an SELinux equivalence
+# so files under the source are labelled exactly as if they lived at the
+# destination. Included once per entry of srv_binds in configure_storage.yml.
+- name: Check whether {{ bind.dst }} is already bind-mounted
+  ansible.builtin.command:
+    cmd: findmnt --noheadings {{ bind.dst }}
+  register: bind_mounted
+  changed_when: false
+  failed_when: false
+
+- name: Check whether {{ bind.src }} exists
+  ansible.builtin.stat:
+    path: "{{ bind.src }}"
+  register: bind_src
+
+- name: Check whether {{ bind.dst }} exists
+  ansible.builtin.stat:
+    path: "{{ bind.dst }}"
+  register: bind_dst
+
+# On the first run the destination is a plain directory on root — for /home it
+# holds the homes the installer and create_ansible_user.yml made. It is copied
+# over so the bind doesn't hide it; the originals stay underneath the mount on
+# root, a few KB. Copying, unlike moving, needs no idle directory: mounting
+# over a directory in use is fine, so this works while `ansible` runs the play
+# from its home. With the source not existing yet, cp -a creates it as a copy
+# of the whole directory — contents, owners and modes.
+- name: Copy {{ bind.dst }} to {{ bind.src }}
+  ansible.builtin.command:
+    cmd: cp -a {{ bind.dst }} {{ bind.src }}
+  when: bind_mounted.rc != 0 and bind_dst.stat.exists and not bind_src.stat.exists
+
+- name: Create {{ bind.src }} and {{ bind.dst }}
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - "{{ bind.src }}"
+    - "{{ bind.dst }}"
+
+- name: Read the local SELinux file-context equivalences
+  ansible.builtin.command:
+    cmd: semanage fcontext --list --locallist
+  register: fcontext_local
+  changed_when: false
+
+- name: Label {{ bind.src }} like {{ bind.dst }}
+  ansible.builtin.command:
+    cmd: semanage fcontext --add --equal {{ bind.dst }} {{ bind.src }}
+  when: (bind.src ~ ' = ' ~ bind.dst) not in fcontext_local.stdout
+
+- name: Apply the labels under {{ bind.src }}
+  ansible.builtin.command:
+    cmd: restorecon -R -v {{ bind.src }}
+  register: restorecon
+  changed_when: restorecon.stdout | length > 0
+
+# requires-mounts-for orders the bind after /srv at boot.
+- name: Bind-mount {{ bind.src }} onto {{ bind.dst }}
+  ansible.posix.mount:
+    path: "{{ bind.dst }}"
+    src: "{{ bind.src }}"
+    fstype: none
+    opts: bind,x-systemd.requires-mounts-for=/srv
+    state: mounted

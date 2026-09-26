@@ -1,0 +1,30 @@
+---
+# The root LV is for the system only. Everything a workload can grow lives on
+# the data LV the installer mounts at /srv, bind-mounted to where it is normally
+# expected (see ../README.md#storage). Run this right after
+# create_ansible_user.yml, before anything installs or starts Podman, so
+# nothing workload-shaped lands on root.
+- name: Put workload data on /srv
+  hosts: server
+  become: yes
+  vars:
+    srv_binds:
+      - { src: /srv/home, dst: /home }
+      - { src: /srv/containers, dst: /var/lib/containers }
+  tasks:
+    - name: Check that /srv is a filesystem of its own
+      ansible.builtin.command:
+        cmd: findmnt --noheadings /srv
+      changed_when: false
+
+    - name: Install semanage
+      ansible.builtin.dnf:
+        name: policycoreutils-python-utils
+        state: present
+
+    - name: Bind each workload location from /srv
+      ansible.builtin.include_tasks: tasks/bind_from_srv.yml
+      loop: "{{ srv_binds }}"
+      loop_control:
+        loop_var: bind
+        label: "{{ bind.src }} -> {{ bind.dst }}"

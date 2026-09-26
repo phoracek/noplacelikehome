@@ -36,7 +36,7 @@ nothing in this repo touches it.
 | OptiPlex | `192.168.0.252` | `optiplex/ansible/` — see [`optiplex/README.md`](optiplex/README.md) |
 | MikroTik | `192.168.0.2` (WAN) / `192.168.89.1` (bench) / `192.168.90.1` (optiplex-2) | manual, RouterOS — see below |
 | rpi5 | `192.168.89.2` | ramus repo, `tools/bench/deploy/ansible/` |
-| optiplex-2 | `192.168.90.2` | manual for now (network slot only) |
+| optiplex-2 | `192.168.90.2` | `optiplex-2/ansible/` — see [`optiplex-2/README.md`](optiplex-2/README.md) |
 
 The MikroTik is not the main home router — it hangs off the home LAN as a
 client at `192.168.0.2` (its WAN port), with the home router at `192.168.0.1`
