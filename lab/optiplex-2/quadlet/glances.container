@@ -6,28 +6,17 @@ Wants=network-online.target
 [Container]
 Image=docker.io/nicolargo/glances:latest
 ContainerName=glances
-# Host network: Glances reports the host's real interfaces, and its port is an
-# ordinary host port that firewalld filters. The web UI has no authentication
-# and exposes every host process's command line, so deploy_glances.yml opens
-# 61208 to the OptiPlex's Caddy only, which gates it with VoidAuth at
-# https://glances.optiplex-2.lab.pacmag.cz.
+# No login: deploy_glances.yml opens 61208 to the OptiPlex's Caddy only.
 Network=host
-# Run Glances in web-server mode (listens on 61208).
-Environment=GLANCES_OPT=-w
+Environment="GLANCES_OPT=-w -C /glances/conf/glances.conf"
 Environment=TZ=Europe/Prague
-# Share the host PID namespace so Glances reports the host's processes, load, and
-# per-process stats rather than just what it sees inside its own container.
+# Report the host's processes and OS.
 PodmanArgs=--pid=host
-# Read-only host mount so Glances can identify the host OS rather than the
-# container's minimal base image.
 Volume=/etc/os-release:/etc/os-release:ro
+Volume=/etc/glances/glances.conf:/glances/conf/glances.conf:ro,Z
 AutoUpdate=registry
 
 [Service]
-# Weighted above the default (100) so CPU/IO contention from CI jobs can't
-# starve the monitor.
-CPUWeight=300
-IOWeight=300
 Restart=always
 
 [Install]

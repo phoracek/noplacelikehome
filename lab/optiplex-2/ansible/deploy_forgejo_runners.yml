@@ -1,0 +1,316 @@
+---
+# The general and bench-access runners and the shared cache server.
+# See ../README.md#forgejo-runners.
+- name: Deploy the Forgejo runners
+  hosts: server
+  become: yes
+  vars:
+    runner_user: forgejo-runner
+    runner_home: /home/forgejo-runner
+    runner_version: 12.13.2
+    cache_server_port: 4000
+    runner_url: "https://code.forgejo.org/forgejo/runner/releases/download/v{{ runner_version }}/forgejo-runner-{{ runner_version }}-linux-amd64"
+    runners_configured: >-
+      {{ forgejo_runners | default([])
+         | rejectattr('uuid', 'equalto', 'PASTE_UUID_HERE')
+         | rejectattr('token', 'equalto', 'PASTE_TOKEN_HERE')
+         | list }}
+  tasks:
+    # acl: Ansible's become_user needs setfacl. openssl: the cache secret.
+    - name: Install acl, openssl and Podman
+      ansible.builtin.dnf:
+        name:
+          - acl
+          - openssl
+          - podman
+        state: present
+
+    - name: Create the forgejo-runner system user
+      ansible.builtin.user:
+        name: "{{ runner_user }}"
+        system: true
+        home: "{{ runner_home }}"
+        create_home: true
+        shell: /sbin/nologin
+        groups: []
+        comment: Forgejo Actions runners (rootless Podman)
+
+    - name: Look up the user's uid
+      ansible.builtin.getent:
+        database: passwd
+        key: "{{ runner_user }}"
+
+    - name: Record the uid and the user-manager environment
+      ansible.builtin.set_fact:
+        runner_uid: "{{ ansible_facts.getent_passwd[runner_user][1] }}"
+        runner_env:
+          XDG_RUNTIME_DIR: "/run/user/{{ ansible_facts.getent_passwd[runner_user][1] }}"
+          DBUS_SESSION_BUS_ADDRESS: "unix:path=/run/user/{{ ansible_facts.getent_passwd[runner_user][1] }}/bus"
+
+    # useradd --system allocates none. The range starts past every existing one.
+    - name: Give the user subordinate uid/gid ranges
+      ansible.builtin.shell:
+        cmd: |
+          set -eu
+          u={{ runner_user }}
+          if grep -q "^$u:" /etc/subuid && grep -q "^$u:" /etc/subgid; then
+            echo unchanged
+            exit 0
+          fi
+          start=$(cat /etc/subuid /etc/subgid 2>/dev/null \
+            | awk -F: 'BEGIN { m = 200000 } { e = $2 + $3; if (e > m) m = e } END { print m }')
+          usermod --add-subuids "$start-$((start + 65535))" \
+                  --add-subgids "$start-$((start + 65535))" "$u"
+      register: runner_subids
+      changed_when: "'unchanged' not in runner_subids.stdout"
+
+    - name: Enable lingering, so the user manager and /run/user/<uid> exist without a login
+      ansible.builtin.command:
+        cmd: loginctl enable-linger {{ runner_user }}
+        creates: /var/lib/systemd/linger/{{ runner_user }}
+
+    - name: Wait for the user manager's bus
+      ansible.builtin.wait_for:
+        path: "/run/user/{{ runner_uid }}/bus"
+        timeout: 30
+
+    - name: Ensure the user's directories exist
+      ansible.builtin.file:
+        path: "{{ runner_home }}/{{ item }}"
+        state: directory
+        owner: "{{ runner_user }}"
+        group: "{{ runner_user }}"
+        mode: "0700"
+      loop:
+        - .config
+        - .config/containers
+        - .config/forgejo-runner
+        - .config/forgejo-cache
+        - .config/systemd
+        - .config/systemd/user
+        - .local
+        - .local/share
+        - .local/share/forgejo-runner
+        - .cache
+        - .cache/containers-tmp
+        - .cache/forgejo-cache
+
+    - name: Keep image pulls off the root filesystem
+      ansible.builtin.template:
+        src: templates/containers.conf.j2
+        dest: "{{ runner_home }}/.config/containers/containers.conf"
+        owner: "{{ runner_user }}"
+        group: "{{ runner_user }}"
+        mode: "0644"
+      vars:
+        podman_user: "{{ runner_user }}"
+        podman_home: "{{ runner_home }}"
+      register: runner_containers_conf
+
+    - name: Let rootless Podman pick up the new subordinate ids
+      ansible.builtin.command:
+        cmd: podman system migrate
+      become_user: "{{ runner_user }}"
+      environment: "{{ runner_env }}"
+      when: runner_subids.changed
+
+    - name: Enable the user's Podman API socket
+      ansible.builtin.systemd_service:
+        name: podman.socket
+        scope: user
+        enabled: true
+        state: started
+      become_user: "{{ runner_user }}"
+      environment: "{{ runner_env }}"
+
+    - name: Stop the Podman API service so it rereads containers.conf
+      ansible.builtin.systemd_service:
+        name: podman.service
+        scope: user
+        state: stopped
+      become_user: "{{ runner_user }}"
+      environment: "{{ runner_env }}"
+      when: runner_containers_conf.changed
+
+    - name: Smoke-test a rootless pull and container
+      ansible.builtin.command:
+        cmd: podman run --rm --pull=always docker.io/library/node:20-bookworm true
+      become_user: "{{ runner_user }}"
+      environment: "{{ runner_env }}"
+      changed_when: false
+
+    - name: Install forgejo-runner v{{ runner_version }}
+      ansible.builtin.get_url:
+        url: "{{ runner_url }}"
+        checksum: "sha256:{{ runner_url }}.sha256"
+        dest: /usr/local/bin/forgejo-runner
+        owner: root
+        group: root
+        mode: "0755"
+      register: runner_binary
+
+    - name: Install the user units
+      ansible.builtin.copy:
+        src: "files/forgejo-runner/{{ item }}"
+        dest: "{{ runner_home }}/.config/systemd/user/{{ item }}"
+        owner: "{{ runner_user }}"
+        group: "{{ runner_user }}"
+        mode: "0644"
+      loop:
+        - forgejo-runner@.service
+        - forgejo-cache.service
+        - podman-prune.service
+        - podman-prune.timer
+      register: runner_units
+
+    - name: Reload the user manager
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+        scope: user
+      become_user: "{{ runner_user }}"
+      environment: "{{ runner_env }}"
+      when: runner_units.changed
+
+    - name: Enable and start the daily store prune
+      ansible.builtin.systemd_service:
+        name: podman-prune.timer
+        scope: user
+        enabled: true
+        state: started
+      become_user: "{{ runner_user }}"
+      environment: "{{ runner_env }}"
+
+    - name: Generate the cache secret
+      ansible.builtin.shell:
+        cmd: umask 077 && openssl rand -hex 32 > {{ runner_home }}/.config/forgejo-cache/secret
+        creates: "{{ runner_home }}/.config/forgejo-cache/secret"
+      become_user: "{{ runner_user }}"
+      register: cache_secret
+
+    - name: Install the cache server's config
+      ansible.builtin.template:
+        src: templates/forgejo-runner/cache-server.yml.j2
+        dest: "{{ runner_home }}/.config/forgejo-cache/config.yml"
+        owner: "{{ runner_user }}"
+        group: "{{ runner_user }}"
+        mode: "0644"
+      register: cache_config
+
+    - name: Enable and start the cache server
+      ansible.builtin.systemd_service:
+        name: forgejo-cache.service
+        scope: user
+        enabled: true
+        state: started
+      become_user: "{{ runner_user }}"
+      environment: "{{ runner_env }}"
+      register: cache_started
+
+    - name: Restart the cache server if its binary, unit, config or secret changed
+      ansible.builtin.systemd_service:
+        name: forgejo-cache.service
+        scope: user
+        state: restarted
+      become_user: "{{ runner_user }}"
+      environment: "{{ runner_env }}"
+      when:
+        - not cache_started.changed
+        - runner_binary.changed or runner_units.changed or cache_config.changed or cache_secret.changed
+
+    - name: Check the runner names
+      ansible.builtin.assert:
+        that:
+          - forgejo_runners | default([]) | map(attribute='name') | list | unique | length == forgejo_runners | default([]) | length
+          - forgejo_runners | default([]) | map(attribute='name') | reject('match', '^[a-z0-9][a-z0-9-]*$') | list | length == 0
+        fail_msg: Every runner needs a unique name of lowercase letters, digits and dashes.
+        quiet: true
+
+    # Before any runner starts, so a renamed runner's registration never runs
+    # twice.
+    - name: Find the runner instances on the host
+      ansible.builtin.find:
+        paths:
+          - "{{ runner_home }}/.config/forgejo-runner"
+          - "{{ runner_home }}/.local/share/forgejo-runner"
+        file_type: directory
+      register: runner_dirs_found
+
+    - name: Work out which instances are stale
+      ansible.builtin.set_fact:
+        runners_stale: >-
+          {{ runner_dirs_found.files | map(attribute='path') | map('basename') | unique
+             | difference(forgejo_runners | default([]) | map(attribute='name')) | list }}
+
+    - name: Stop and disable stale runners
+      ansible.builtin.systemd_service:
+        name: "forgejo-runner@{{ item }}.service"
+        scope: user
+        enabled: false
+        state: stopped
+      become_user: "{{ runner_user }}"
+      environment: "{{ runner_env }}"
+      loop: "{{ runners_stale }}"
+      failed_when: false
+
+    - name: Delete stale runners' config and working directories
+      ansible.builtin.file:
+        path: "{{ runner_home }}/{{ item.1 }}/{{ item.0 }}"
+        state: absent
+      loop: "{{ runners_stale | product(['.config/forgejo-runner', '.local/share/forgejo-runner']) | list }}"
+      loop_control:
+        label: "{{ item.1 }}/{{ item.0 }}"
+
+    - name: Ensure each runner's directories exist
+      ansible.builtin.file:
+        path: "{{ runner_home }}/{{ item.1 }}/{{ item.0.name }}"
+        state: directory
+        owner: "{{ runner_user }}"
+        group: "{{ runner_user }}"
+        mode: "0700"
+      loop: "{{ forgejo_runners | default([]) | product(['.config/forgejo-runner', '.local/share/forgejo-runner']) | list }}"
+      loop_control:
+        label: "{{ item.1 }}/{{ item.0.name }}"
+
+    - name: Install each runner's config.yml
+      ansible.builtin.template:
+        src: templates/forgejo-runner/config.yml.j2
+        dest: "{{ runner_home }}/.config/forgejo-runner/{{ runner.name }}/config.yml"
+        owner: "{{ runner_user }}"
+        group: "{{ runner_user }}"
+        mode: "0600"
+      loop: "{{ runners_configured }}"
+      loop_control:
+        loop_var: runner
+        label: "forgejo-runner@{{ runner.name }}"
+      register: runner_configs
+      no_log: true  # the item holds the token
+
+    - name: Enable and start each configured runner
+      ansible.builtin.systemd_service:
+        name: "forgejo-runner@{{ item.name }}.service"
+        scope: user
+        enabled: true
+        state: started
+      become_user: "{{ runner_user }}"
+      environment: "{{ runner_env }}"
+      loop: "{{ runners_configured }}"
+      loop_control:
+        label: "forgejo-runner@{{ item.name }}"
+      register: runners_started
+      no_log: true
+
+    # Restarting cancels the running job.
+    - name: Restart runners whose binary, unit or config changed
+      ansible.builtin.systemd_service:
+        name: "forgejo-runner@{{ item.0.name }}.service"
+        scope: user
+        state: restarted
+      become_user: "{{ runner_user }}"
+      environment: "{{ runner_env }}"
+      loop: "{{ runners_configured | zip(runner_configs.results, runners_started.results) | list }}"
+      loop_control:
+        label: "forgejo-runner@{{ item.0.name }}"
+      when:
+        - not item.2.changed
+        - item.1.changed or runner_binary.changed or runner_units.changed or cache_secret.changed
+      no_log: true

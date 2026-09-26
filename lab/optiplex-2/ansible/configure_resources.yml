@@ -1,0 +1,85 @@
+---
+# See ../README.md#resource-sharing.
+- name: Configure resource sharing between users
+  hosts: server
+  become: yes
+  vars:
+    system_reserved_cpus: 2
+  tasks:
+    # Absent on a CPU without E-cores.
+    - name: Read which CPUs are E-cores
+      ansible.builtin.slurp:
+        src: /sys/devices/cpu_atom/cpus
+      register: ecores_raw
+      failed_when: false
+
+    - name: Work out the reserved and the user CPUs
+      ansible.builtin.set_fact:
+        reserved_cpus: "{{ reserved }}"
+        user_cpus: "{{ all_cpus | difference(reserved) }}"
+      vars:
+        all_cpus: "{{ range(ansible_processor_nproc) | list }}"
+        # "16-19" or "16,18-19" → [16, 17, 18, 19]
+        ecores: >-
+          {%- set out = [] -%}
+          {%- if ecores_raw.content is defined -%}
+            {%- for part in (ecores_raw.content | b64decode | trim).split(',') if part -%}
+              {%- set b = part.split('-') -%}
+              {%- set _ = out.extend(range(b[0] | int, (b[-1] | int) + 1)) -%}
+            {%- endfor -%}
+          {%- endif -%}
+          {{ out }}
+        reserved: >-
+          {{ (ecores[-system_reserved_cpus:] if ecores | length >= system_reserved_cpus
+              else all_cpus[:system_reserved_cpus]) | list }}
+
+    - name: Show the split
+      ansible.builtin.debug:
+        msg: >-
+          E-cores: {{ (ecores_raw.content | b64decode | trim) if ecores_raw.content is defined else 'none' }};
+          reserved for the system: {{ reserved_cpus | join(',') }};
+          users get: {{ user_cpus | join(',') }}
+
+    - name: Ensure the slice drop-in directories exist
+      ansible.builtin.file:
+        path: "/etc/systemd/system/{{ item }}.d"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop:
+        - user.slice
+        - user-.slice
+
+    - name: Keep all users off the reserved CPUs
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/user.slice.d/50-reserve-system-cpus.conf
+        content: |
+          # Managed by configure_resources.yml.
+          # CPUs {{ reserved_cpus | join(',') }} are left to system services.
+          [Slice]
+          AllowedCPUs={{ user_cpus | join(',') }}
+        owner: root
+        group: root
+        mode: "0644"
+      register: reserve_dropin
+
+    # user-.slice.d applies to every user-<uid>.slice. Setting the default
+    # weights enables the cpu and io controllers.
+    - name: Give every user the same CPU and IO weight
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/user-.slice.d/50-fair-share.conf
+        content: |
+          # Managed by configure_resources.yml.
+          [Slice]
+          CPUWeight=100
+          IOWeight=100
+        owner: root
+        group: root
+        mode: "0644"
+      register: fair_dropin
+
+    - name: Reload systemd to apply the slice settings
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+      when: reserve_dropin.changed or fair_dropin.changed

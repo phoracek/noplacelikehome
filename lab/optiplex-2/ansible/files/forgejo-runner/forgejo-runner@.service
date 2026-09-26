@@ -1,0 +1,16 @@
+[Unit]
+Description=Forgejo Actions runner %i (docker executor, rootless Podman)
+Requires=podman.socket
+After=podman.socket
+Wants=forgejo-cache.service
+After=forgejo-cache.service
+
+[Service]
+Environment=DOCKER_HOST=unix://%t/podman/podman.sock
+WorkingDirectory=%h/.local/share/forgejo-runner/%i
+ExecStart=/usr/local/bin/forgejo-runner daemon --config %h/.config/forgejo-runner/%i/config.yml
+Restart=always
+RestartSec=10s
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=Forgejo Actions runner for container image builds (host executor)
+
+[Service]
+WorkingDirectory=%h
+ExecStart=/usr/local/bin/forgejo-runner daemon --config %h/.config/forgejo-runner/config.yml
+Restart=always
+RestartSec=10s
+
+[Install]
+WantedBy=default.target

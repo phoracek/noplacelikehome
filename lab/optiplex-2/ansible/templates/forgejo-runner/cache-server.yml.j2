@@ -1,0 +1,6 @@
+# forgejo-runner cache-server (forgejo-cache.service).
+cache:
+  dir: {{ runner_home }}/.cache/forgejo-cache
+  host: 127.0.0.1
+  port: {{ cache_server_port }}
+  secret_url: file:{{ runner_home }}/.config/forgejo-cache/secret

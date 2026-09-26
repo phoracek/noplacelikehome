@@ -1,0 +1,8 @@
+[Unit]
+Description=Prune forgejo-runner's rootless Podman store
+Documentation=man:podman-system-prune(1)
+
+[Service]
+Type=oneshot
+# No --all: tagged images stay.
+ExecStart=/usr/bin/podman system prune --force --volumes

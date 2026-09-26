@@ -1,0 +1,22 @@
+# Copy to group_vars/server.yml (gitignored). Entries left on PASTE_* are
+# skipped.
+
+# forgejo-runner@<name> per entry. Optional, with defaults:
+#   labels:      [general:docker://node:20-bookworm]
+#   capacity:    1
+#   cpu_shares:  1024
+forgejo_runners:
+  - name: general
+    uuid: "PASTE_UUID_HERE"
+    token: "PASTE_TOKEN_HERE"
+    capacity: 2
+  - name: benchaccess
+    uuid: "PASTE_UUID_HERE"
+    token: "PASTE_TOKEN_HERE"
+    labels: ["bench-access:docker://node:20-bookworm"]
+    capacity: 1
+    cpu_shares: 4096
+
+forgejo_imagebuild_runner:
+  uuid: "PASTE_UUID_HERE"
+  token: "PASTE_TOKEN_HERE"

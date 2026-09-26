@@ -1,0 +1,5 @@
+# Rootless Podman config for {{ podman_user }}, merged over
+# /etc/containers/containers.conf.
+[engine]
+# Stage pulls on the workload volume, not in /var/tmp on root.
+image_copy_tmp_dir = "{{ podman_home }}/.cache/containers-tmp"

@@ -8,11 +8,7 @@
         name: dnf-automatic
         state: latest
 
-    # Out of the box dnf-automatic.timer only downloads updates
-    # (apply_updates = no). Installing them is what keeps the host patched,
-    # and rebooting when an update needs it (kernel, glibc, systemd, ...) is
-    # what makes those take effect. A reboot kills any CI job running at that
-    # moment; Forgejo marks it failed and it can be re-run.
+    # The default only downloads.
     - name: Apply updates and reboot when they need it
       community.general.ini_file:
         path: /etc/dnf/automatic.conf

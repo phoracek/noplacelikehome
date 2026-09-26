@@ -1,9 +1,5 @@
 ---
-# The root LV is for the system only. Everything a workload can grow lives on
-# the data LV the installer mounts at /srv, bind-mounted to where it is normally
-# expected (see ../README.md#storage). Run this right after
-# create_ansible_user.yml, before anything installs or starts Podman, so
-# nothing workload-shaped lands on root.
+# See ../README.md#storage. Run before anything uses Podman.
 - name: Put workload data on /srv
   hosts: server
   become: yes

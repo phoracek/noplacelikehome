@@ -1,0 +1,22 @@
+log:
+  level: info
+
+server:
+  connections:
+    forgejo:
+      url: https://forge.lab.pacmag.cz/
+      uuid: {{ forgejo_imagebuild_runner.uuid }}
+      token: {{ forgejo_imagebuild_runner.token }}
+
+runner:
+  capacity: 1
+  labels:
+    - image-build:host
+
+cache:
+  enabled: true
+  external_server: http://127.0.0.1:{{ cache_server_port }}/
+  secret_url: file:{{ imagebuild_home }}/.config/forgejo-runner/cache-secret
+
+host:
+  workdir_parent: {{ imagebuild_home }}/.cache/act

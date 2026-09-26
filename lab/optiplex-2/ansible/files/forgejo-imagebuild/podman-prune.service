@@ -1,0 +1,8 @@
+[Unit]
+Description=Prune forgejo-imagebuild's rootless Podman layer store
+Documentation=man:podman-system-prune(1)
+
+[Service]
+Type=oneshot
+# No --all: tagged images are the build cache.
+ExecStart=/usr/bin/podman system prune --force

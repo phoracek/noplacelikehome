@@ -1,7 +1,5 @@
 ---
-# Bind-mounts {{ bind.src }} onto {{ bind.dst }}, with an SELinux equivalence
-# so files under the source are labelled exactly as if they lived at the
-# destination. Included once per entry of srv_binds in configure_storage.yml.
+# One entry of srv_binds (configure_storage.yml).
 - name: Check whether {{ bind.dst }} is already bind-mounted
   ansible.builtin.command:
     cmd: findmnt --noheadings {{ bind.dst }}
@@ -19,13 +17,7 @@
     path: "{{ bind.dst }}"
   register: bind_dst
 
-# On the first run the destination is a plain directory on root — for /home it
-# holds the homes the installer and create_ansible_user.yml made. It is copied
-# over so the bind doesn't hide it; the originals stay underneath the mount on
-# root, a few KB. Copying, unlike moving, needs no idle directory: mounting
-# over a directory in use is fine, so this works while `ansible` runs the play
-# from its home. With the source not existing yet, cp -a creates it as a copy
-# of the whole directory — contents, owners and modes.
+# Copy, not move: the directory may be in use (the ansible user's home).
 - name: Copy {{ bind.dst }} to {{ bind.src }}
   ansible.builtin.command:
     cmd: cp -a {{ bind.dst }} {{ bind.src }}
@@ -59,7 +51,6 @@
   register: restorecon
   changed_when: restorecon.stdout | length > 0
 
-# requires-mounts-for orders the bind after /srv at boot.
 - name: Bind-mount {{ bind.src }} onto {{ bind.dst }}
   ansible.posix.mount:
     path: "{{ bind.dst }}"

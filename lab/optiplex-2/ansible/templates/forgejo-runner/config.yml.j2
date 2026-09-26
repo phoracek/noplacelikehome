@@ -1,0 +1,33 @@
+log:
+  level: info
+
+server:
+  connections:
+    forgejo:
+      url: https://forge.lab.pacmag.cz/
+      uuid: {{ runner.uuid }}
+      token: {{ runner.token }}
+
+runner:
+  capacity: {{ runner.capacity | default(1) }}
+  labels:
+{% for label in runner.labels | default(['general:docker://node:20-bookworm']) %}
+    - {{ label }}
+{% endfor %}
+
+cache:
+  enabled: true
+  # Trailing slash required.
+  external_server: http://127.0.0.1:{{ cache_server_port }}/
+  secret_url: file:{{ runner_home }}/.config/forgejo-cache/secret
+  # The host as seen from rootless job containers.
+  host: host.containers.internal
+
+container:
+  # Keep the Podman socket out of the job containers.
+  docker_host: "-"
+  force_pull: true
+{% if runner.cpu_shares is defined %}
+  # Job containers run under the Podman service, not the runner's unit.
+  options: --cpu-shares={{ runner.cpu_shares }}
+{% endif %}

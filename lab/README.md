@@ -1,16 +1,13 @@
 # Lab
 
-Three machines. An OptiPlex on the home LAN runs the service stack — everything
-under `*.lab.pacmag.cz` — and is documented in [`optiplex/`](optiplex/README.md).
-A Raspberry Pi 5 (`rpi5`) is the [ramus](https://forge.lab.pacmag.cz) hardware
-bench, and a second OptiPlex (`optiplex-2`) is a Forgejo Actions runner host.
-Both hang off a MikroTik, each in its own isolated `/24`.
+- OptiPlex: the `*.lab.pacmag.cz` services ([`optiplex/`](optiplex/README.md)).
+- optiplex-2: dev box and Forgejo Actions runners
+  ([`optiplex-2/`](optiplex-2/README.md)).
+- rpi5: the [ramus](https://forge.lab.pacmag.cz) hardware bench, provisioned
+  from the ramus repo (`tools/bench/deploy/ansible/`).
 
-This README is the shared part: the network they all sit on, and all it takes
-to cover the bench and optiplex-2's network slot. The Pi itself — the labgrid
-coordinator and exporter, the bench services, host bootstrap and automatic
-updates — is provisioned from the ramus repo (`tools/bench/deploy/ansible/`);
-nothing in this repo touches it.
+This README covers the network. rpi5 and optiplex-2 each sit in an isolated
+`/24` behind a MikroTik.
 
 ```
                         [ internet ]
@@ -33,23 +30,18 @@ nothing in this repo touches it.
 
 | Host | Address | Provisioned from |
 |------|---------|------------------|
-| OptiPlex | `192.168.0.252` | `optiplex/ansible/` — see [`optiplex/README.md`](optiplex/README.md) |
-| MikroTik | `192.168.0.2` (WAN) / `192.168.89.1` (bench) / `192.168.90.1` (optiplex-2) | manual, RouterOS — see below |
-| rpi5 | `192.168.89.2` | ramus repo, `tools/bench/deploy/ansible/` |
-| optiplex-2 | `192.168.90.2` | `optiplex-2/ansible/` — see [`optiplex-2/README.md`](optiplex-2/README.md) |
+| OptiPlex | `192.168.0.252` | `optiplex/ansible/` |
+| MikroTik | `192.168.0.2` (WAN) / `192.168.89.1` / `192.168.90.1` | by hand, below |
+| rpi5 | `192.168.89.2` | ramus repo |
+| optiplex-2 | `192.168.90.2` | `optiplex-2/ansible/` |
 
-The MikroTik is not the main home router — it hangs off the home LAN as a
-client at `192.168.0.2` (its WAN port), with the home router at `192.168.0.1`
-in front of it. Traffic from the home LAN therefore enters the MikroTik
-through its *WAN* side, which is what dictates the firewall rule placement
-below.
+The MikroTik is a client of the home router, so home-LAN traffic enters it on
+the WAN side.
 
 ## Reaching the networks behind the MikroTik
 
-Both networks live behind the MikroTik, so home-LAN clients need static routes
-to them via `192.168.0.2` — per client, or once on the home router. On a
-NetworkManager client (`<conn>` is the profile on the home LAN, `<iface>` its
-device):
+Home-LAN clients need routes via `192.168.0.2`, per client or on the home
+router. With NetworkManager:
 
 ```
 sudo nmcli connection modify <conn> +ipv4.routes "192.168.89.0/24 192.168.0.2"
@@ -57,18 +49,10 @@ sudo nmcli connection modify <conn> +ipv4.routes "192.168.90.0/24 192.168.0.2"
 sudo nmcli device reapply <iface>
 ```
 
-`modify` only changes the saved profile; `reapply` is what puts the routes on
-the live interface. `ip route get 192.168.90.2` should then say
-`via 192.168.0.2`.
+The OptiPlex has the optiplex-2 route (`configure_network.yml`). optiplex-2
+needs none.
 
-The OptiPlex gets both routes through `configure_network.yml`: the bench one
-is what lets the Forgejo Actions runners there drive the bench, the optiplex-2
-one is what lets its Caddy proxy services running on optiplex-2. optiplex-2 needs
-no route of its own: its default gateway is the MikroTik, which is directly
-attached to the bench net.
-
-labgrid clients also SSH to the exporter by its registered name, which is the
-Pi's hostname — so each client machine wants:
+labgrid clients SSH to the exporter by the Pi's hostname:
 
 ```
 # ~/.ssh/config
@@ -80,83 +64,48 @@ Host optiplex-2
     User admin
 ```
 
-The access model:
+Access:
 
-- Home LAN → bench net: SSH (22), the labgrid coordinator (20408, on the Pi
-  only) and ping, nothing else. The coordinator has no TLS and no
-  authentication, so this firewall *is* its access control. Everything else
-  labgrid needs — OpenOCD, RTT, MIDI, firmware sync — rides inside the SSH
-  connection, so no other port is open.
-- Bench net → anywhere: internet egress only (out the WAN port, masqueraded,
-  then through the home router). It cannot initiate traffic to the home LAN or
-  to optiplex-2.
-- Home LAN → optiplex-2: everything. It is a server whose services are meant
-  to be reached from the LAN; which ports actually answer is up to its own
-  firewalld. Services with no login of their own (Glances) admit only the
-  OptiPlex, whose Caddy gates them with VoidAuth.
-- optiplex-2 → bench net: the same as the home LAN — SSH, the coordinator and
-  ping — so runners there can drive the bench.
-- optiplex-2 → home LAN: the OptiPlex (`192.168.0.252`) on HTTPS (443) and
-  git over SSH (2222) only. 443 is Caddy, so the forge — `forge.lab.pacmag.cz`
-  resolves to that address — its container registry and the other vhosts; the
-  runners can't register, clone or pull without it. 2222 is Forgejo's SSH, for
-  cloning and pushing from the dev account. Nothing else on the home LAN.
+- Home LAN → bench net: SSH (22), the labgrid coordinator (20408, Pi only),
+  ping. The coordinator has no authentication; this firewall is its access
+  control. The rest of labgrid runs inside SSH.
+- Bench net → anywhere: internet egress only.
+- Home LAN → optiplex-2: everything; its firewalld decides.
+- optiplex-2 → bench net: as the home LAN.
+- optiplex-2 → home LAN: the OptiPlex (`192.168.0.252`) on 443 (Caddy: forge,
+  registry) and 2222 (git over SSH) only.
 - optiplex-2 → anywhere else: internet egress only.
-- Bench net and optiplex-2 → the router itself: DHCP, DNS and ping only. The
-  management interfaces (WinBox, WebFig, SSH, MAC-level access) are closed to
-  them.
+- Bench net and optiplex-2 → the router: DHCP, DNS and ping only.
 
 ## MikroTik
 
-Everything below is pasted into the RouterOS terminal (v7 syntax). The router
-itself stays manually managed — Ansible touches neither the Pi nor optiplex-2's
-network.
+Pasted into the RouterOS terminal (v7). The router is managed by hand.
 
 ### Shared rules
 
-The router is administered from the home LAN, which arrives on the WAN port and
-would otherwise hit `defconf: drop all not coming from LAN`. One input rule at
-the very top of the filter opens the management ports to it:
+Management from the home LAN, which arrives on the WAN port:
 
 ```
 /ip firewall filter add place-before=0 chain=input in-interface=ether1 src-address=192.168.0.0/24 protocol=tcp dst-port=22,80,443,8291 action=accept comment="Allow management from WAN subnet"
 ```
 
-Each isolated network gets a routed port of its own that is deliberately *not*
-in the LAN interface list. Membership there is what the default configuration
-trusts for management: the input-chain rule `defconf: drop all not coming from
-LAN` is what keeps an interface away from WinBox, WebFig and the router's SSH,
-and the MAC server and neighbor discovery are enabled on the LAN list only, so
-MAC-Telnet/MAC-WinBox don't answer outside it either. Instead each network gets
-exactly the router services it needs, DHCP and DNS, through input rules on its
-port placed above that drop. Anything else it sends to the router falls
-through to the LAN drop; ping still works via the earlier `defconf: accept
-ICMP`. Without these accepts the same drop silently eats DHCP and DNS — the
-host comes up with no address.
+Each isolated network's port is *not* in the LAN interface list, which is what
+opens router management (and the MAC server, neighbor discovery). Input rules
+give it DHCP and DNS instead; without them it gets no address.
 
-Isolation between the networks is enforced with explicit forward-chain rules.
-Placement constraints, all consequences of the home LAN sitting on the WAN side:
+Rule order, with the home LAN on the WAN side:
 
-- Every block must sit *above* `defconf: drop all from WAN not DSTNATed`, or
-  that rule eats the home LAN's traffic before the accepts are reached (while
-  ping to the router's own address on that network still works — that's the
-  input chain — which makes the failure look like a host problem, not a
-  rule-order problem).
-- A network's route to the home LAN goes *out the WAN port*, so a bare
-  "accept egress out WAN" would let it reach the home LAN. The explicit
-  →home drop must come before the egress accept.
-- They must also stay *below* `defconf: accept established,related`, so return
-  traffic keeps flowing.
+- Forward rules go above `defconf: drop all from WAN not DSTNATed` and below
+  `defconf: accept established,related`.
+- A network's route to the home LAN leaves via WAN, so its →home drop goes
+  before its egress accept.
 
-The blocks below use `place-before` to satisfy all of this. The braces make
-each block run as one script, so its `:local` survives from line to line.
-Rules added without `place-before` land at the bottom of the chain, below the
-defconf drops, and never match.
+`place-before` keeps that order; rules appended at the bottom never match. The
+braces run each block as one script so `:local` survives.
 
 ### Bench (`ether3`)
 
-On the default configuration `ether3` is a port of the LAN bridge. First make
-it a routed port of its own, give it the bench address, and serve DHCP on it:
+A routed port with DHCP:
 
 ```
 /interface bridge port remove [find interface=ether3]
@@ -169,12 +118,9 @@ it a routed port of its own, give it the bench address, and serve DHCP on it:
 /ip dhcp-server lease add address=192.168.89.2 mac-address=98:FE:54:0B:B1:0C server=bench-host comment="bench-host (rpi5)"
 ```
 
-The static lease pins the Pi (MAC `98:FE:54:0B:B1:0C`, printed by
-`/ip dhcp-server lease print` after its first boot) to `.2` — outside the
-pool, so the address survives lease churn and pool exhaustion. If the board is
-ever replaced, this is the one line to update.
+The lease pins the Pi (MAC `98:FE:54:0B:B1:0C`) to `.2`, outside the pool.
 
-Router access, DHCP and DNS only:
+Router access:
 
 ```
 {
@@ -202,15 +148,11 @@ add place-before=$wanDrop chain=forward src-address=192.168.89.0/24 action=drop 
 }
 ```
 
-The final drop is the catch-all: anything the Pi sends that did not leave via
-the WAN port is denied, so a local network added to the router later is closed
-to the bench until a rule says otherwise.
+The last drop closes any other local network to the bench.
 
 ### optiplex-2 (`ether4`)
 
-Same shape as the bench: take `ether4` off the bridge, give it the network's
-address, serve DHCP with a pinned lease for optiplex-2 (MAC
-`20:88:10:90:D8:0E`):
+As the bench, with optiplex-2's MAC `20:88:10:90:D8:0E`:
 
 ```
 /interface bridge port remove [find interface=ether4]
@@ -223,7 +165,7 @@ address, serve DHCP with a pinned lease for optiplex-2 (MAC
 /ip dhcp-server lease add address=192.168.90.2 mac-address=20:88:10:90:D8:0E server=optiplex-2 comment="optiplex-2"
 ```
 
-Router access, DHCP and DNS only:
+Router access:
 
 ```
 {
@@ -235,10 +177,7 @@ add place-before=$lanDrop chain=input in-interface=ether4 protocol=tcp dst-port=
 }
 ```
 
-Forwarding. The two bench rules go above the bench's own `nothing else
-reaches the network` drop — below it they would never match — and the rest
-follows the same pattern as the bench block, with the OptiPlex HTTPS and git-over-SSH
-accepts slotted in ahead of the →home drop:
+Forwarding. The bench rules go above the bench's own drop:
 
 ```
 {
@@ -256,6 +195,3 @@ add place-before=$wanDrop chain=forward src-address=192.168.90.0/24 out-interfac
 add place-before=$wanDrop chain=forward src-address=192.168.90.0/24 action=drop comment="optiplex-2: no traffic to other local networks"
 }
 ```
-
-Traffic from optiplex-2 to the OptiPlex leaves the WAN port and is masqueraded,
-so the OptiPlex sees it coming from `192.168.0.2`.

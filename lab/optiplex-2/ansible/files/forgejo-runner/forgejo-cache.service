@@ -1,0 +1,12 @@
+[Unit]
+Description=Forgejo Actions cache server shared by the runners
+Documentation=https://forgejo.org/docs/latest/admin/actions/runner-installation/
+
+[Service]
+# The config file keeps the secret off the command line.
+ExecStart=/usr/local/bin/forgejo-runner cache-server --config %h/.config/forgejo-cache/config.yml
+Restart=always
+RestartSec=5s
+
+[Install]
+WantedBy=default.target

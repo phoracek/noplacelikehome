@@ -1,8 +1,5 @@
 ---
-# The account for using this host as a dev box. It logs in with the same key
-# as the other accounts and has no sudo — administering the host is what
-# `admin` and `ansible` are for. Its home, and with it its rootless Podman
-# storage, is under /home, i.e. on /srv (configure_storage.yml must run first).
+# Run configure_storage.yml first: the home belongs on /srv.
 - name: Create the dev user
   hosts: server
   become: yes
@@ -14,6 +11,7 @@
         name: "{{ dev_user }}"
         shell: /bin/bash
         state: present
+      register: dev_user_account
 
     - name: Authorize the key
       ansible.posix.authorized_key:
@@ -21,9 +19,31 @@
         state: present
         key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
 
-    # Without lingering the user's systemd instance — and every rootless
-    # container and user service under it — is stopped at logout.
     - name: Keep the user's services running without a login session
       ansible.builtin.command:
         cmd: loginctl enable-linger {{ dev_user }}
         creates: /var/lib/systemd/linger/{{ dev_user }}
+
+    - name: Ensure the user's Podman directories exist
+      ansible.builtin.file:
+        path: "{{ dev_user_account.home }}/{{ item }}"
+        state: directory
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+        mode: "0700"
+      loop:
+        - .config
+        - .config/containers
+        - .cache
+        - .cache/containers-tmp
+
+    - name: Keep the user's image pulls off the root filesystem
+      ansible.builtin.template:
+        src: templates/containers.conf.j2
+        dest: "{{ dev_user_account.home }}/.config/containers/containers.conf"
+        owner: "{{ dev_user }}"
+        group: "{{ dev_user }}"
+        mode: "0644"
+      vars:
+        podman_user: "{{ dev_user }}"
+        podman_home: "{{ dev_user_account.home }}"

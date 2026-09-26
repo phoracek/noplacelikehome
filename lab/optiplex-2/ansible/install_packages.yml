@@ -1,6 +1,4 @@
 ---
-# Base tooling for everyone on the host. Podman runs rootless under each user;
-# their storage lives in their homes, on /srv.
 - name: Install base packages
   hosts: server
   become: yes
