@@ -39,7 +39,7 @@ Environment=ADMIN_NAME=Petr
 Environment=ADMIN_EMAIL=p.horacek94@gmail.com
 # LinuxServer images drop to PUID/PGID and chown /config to it on start. 1000 is
 # this host's `admin` account, which rootful Podman maps straight through — the
-# same uid Forgejo and the CI runners already use for their data.
+# same uid Forgejo already uses for its data.
 Environment=PUID=1000
 Environment=PGID=1000
 # Laravel builds absolute links from APP_URL, and ASSET_URL is what makes the
@@ -78,10 +78,6 @@ Environment=TZ=Europe/Prague
 AutoUpdate=registry
 
 [Service]
-# Weighted above the default (100) so CPU/IO contention from Forgejo's CI job
-# containers can't starve this service.
-CPUWeight=300
-IOWeight=300
 Restart=always
 
 [Install]

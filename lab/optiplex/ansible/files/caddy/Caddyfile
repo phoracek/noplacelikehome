@@ -75,9 +75,7 @@ glances.lab.pacmag.cz {
 	reverse_proxy glances:61208
 }
 
-# Glances on optiplex-2, gated here like the local one. It listens on the host
-# network over there, with firewalld admitting only this host, so this gate is
-# the only way in. Reached over the static route configure_network.yml installs.
+# Glances on optiplex-2, which admits only this host.
 glances.optiplex-2.lab.pacmag.cz {
 	import wedos_tls
 	import voidauth

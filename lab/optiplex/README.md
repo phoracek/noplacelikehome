@@ -59,9 +59,6 @@ two services on this host.
 | `homeassistant.service` | <https://home.lab.pacmag.cz> | Home automation (logs users in itself). Host network |
 | `zigbee2mqtt.service` | <https://zigbee.lab.pacmag.cz> | Zigbee bridge. Host network, owns the USB dongle. **No login of its own** — see the note below |
 | `mosquitto.service` | `127.0.0.1:1883` | MQTT broker between the two. Host network, loopback only, no web UI to proxy |
-| `forgejo-runner-1.service`, `forgejo-runner-2.service` | (workers, no UI) | Forgejo Actions runners — one systemd unit per entry in `forgejo_runners`. They serve the forge on this same host |
-| `forgejo-runner.service` (user unit of `forgejo-imagebuild`) | (worker, no UI) | Host-executor runner for container image builds on `petr/ramus` — not a container; see [Image-build runner](#image-build-runner) |
-| `forgejo-cache.service` | `http://forgejo-cache:4000/` (runners only) | Actions cache server shared by the runners. Only on the private `forgejo-cache` Podman network, no host port — see [Shared Actions cache](#shared-actions-cache) |
 
 Every hostname above is an A record pointing at `192.168.0.252`.
 
@@ -91,10 +88,8 @@ The first five are host setup and only need re-running to change the host itself
 `configure_network.yml` sets the hostname and owns the NetworkManager profile's
 static routes — the `static_routes` list at the top of that playbook is the only
 place to add one, since it is written wholesale and overwrites anything set on
-the profile by hand. Today it carries two routes via `192.168.0.2`:
-`192.168.89.0/24`, this host's way onto the bench network, and
-`192.168.90.0/24`, which Caddy uses to reach optiplex-2 (see the [lab
-README](../README.md#reaching-the-networks-behind-the-mikrotik)).
+the profile by hand. It holds `192.168.90.0/24` via `192.168.0.2`, for Caddy
+to reach optiplex-2.
 `deploy_services.yml` is the entry point for the stack: it deploys the
 containerised backends and the shared network first, then Caddy last, so no vhost
 forwards to a backend that isn't up yet. Each imported playbook also runs on its
@@ -118,13 +113,8 @@ The Caddy image is built locally and has no registry copy, so auto-update skips
 it — rebuild it by re-running `deploy_services_caddy.yml` after changing the
 Containerfile or the vendored provider.
 
-`podman-prune.timer` runs daily to reclaim what CI churn leaves behind: stopped
-containers a crashed job forgot to remove, the anonymous volumes those
-containers held, and dangling images — the ones orphaned each time a `:latest`
-tag moves to a new build. CI churn on this host had otherwise filled the disk to
-the point where image builds failed with ENOSPC. Tagged images are never
-removed, so nothing the runners or the services depend on can be collected; the
-tradeoff is that a tagged image that falls out of use has to be removed by hand.
+`podman-prune.timer` removes stopped containers, unused volumes and dangling
+images daily.
 
 This does not reach Forgejo's own package/container registry storage
 (`/var/lib/homelab/forgejo/gitea/packages`) — that grows independently of
@@ -154,183 +144,10 @@ Serving a directory rather than an app needs none of this — no container, no
 unit, no data dir of its own beyond the tree itself. See [Files](#files) for the
 shape of that.
 
-## Forgejo Actions runners
+## Forgejo Actions
 
-Two [Forgejo Actions](https://forgejo.org/docs/latest/user/actions/) runners pick
-up CI jobs and run each job as a Podman container on this host. Actions are
-enabled on the forge itself (`FORGEJO__actions__ENABLED=true` in its Quadlet);
-the runners are declared as one entry each in `forgejo_runners`
-(`group_vars/server.yml`), rendered into one Quadlet unit + one `config.yml` per
-entry. Add or remove entries to change how many runners run.
-
-Jobs that need real hardware have nothing attached to this host to drive:
-ramus's hardware lanes (`protocol-hw-tests`, `editor-hw-tests`) flash firmware
-and talk to the labgrid coordinator on the [bench host](../README.md) at
-`192.168.89.2`. This host reaches it over the `192.168.89.0/24` static route
-`configure_network.yml` installs, and the MikroTik in front of the bench lets
-in only SSH and the coordinator port.
-
-### Registering a runner
-
-Forgejo 15 / Runner 12 uses a YAML config file with persistent connection
-credentials. All host-side steps go through Ansible — no manual editing on the
-server.
-
-1. In Forgejo: **Site Administration → Actions → Runners → "Create new
-   runner"**. The page shows a UUID and a registration token (the token is shown
-   once — copy both).
-2. Fill them into the matching entry under `forgejo_runners` in
-   `ansible/group_vars/server.yml` (gitignored).
-3. Re-run `deploy_services.yml`. Entries still on the `PASTE_*` placeholders get
-   no `config.yml` and are not started, so they can be filled in one at a time.
-
-### Runner ↔ host Podman: how it's wired
-
-Each runner reaches the forge at `https://forge.lab.pacmag.cz/` — its public
-name, which resolves to this host's own LAN address and hairpins back to Caddy's
-published 443. The job containers it spawns take the same path, so one URL works
-for the runner, for git clones and for registry pulls, with no `/etc/hosts` pins
-anywhere.
-
-To spawn job containers as siblings, the runner needs the host's rootful Podman
-socket, which takes two things (both in `install_podman.yml`):
-
-1. **DAC** — `podman.socket` gets a drop-in setting `SocketMode=0660` +
-   `SocketGroup=podman-users` (GID 980); the runner Quadlet joins that GID via
-   `GroupAdd=980`. The socket stays unreadable to everyone else.
-2. **MAC** — the runner Quadlet sets `SecurityLabelType=container_runtime_t`.
-   The socket is labeled `container_var_run_t`, which the default `container_t`
-   is explicitly denied. Other containers keep running in `container_t`.
-
-`sudo podman inspect forgejo-runner-1 --format '{{.ProcessLabel}}'` should show
-`container_runtime_t`.
-
-### Shared Actions cache
-
-The runners share one cache server, `forgejo-cache.service`: the runner image's
-`forgejo-runner cache-server` subcommand, run as its own container. Left to
-itself each runner starts a private cache server, so a job only got a cache hit
-when it landed on the runner that saved the entry.
-
-* The cache server and the runners are on a private Podman network,
-  `forgejo-cache`, and the runners reach it as `http://forgejo-cache:4000/`
-  (`cache.external_server` in `config.yml.j2`). The image-build runner is a
-  host process, not on that network, so the server also publishes
-  `127.0.0.1:4000` for it — loopback only.
-* Each runner still runs its own cache *proxy*: job containers talk to the
-  proxy, and the proxy forwards to the server. The runner and the server
-  authenticate to each other with a shared secret. Ansible generates it once, at
-  `/var/lib/homelab/forgejo-cache/secret`, and bind-mounts it into all three
-  containers. To rotate it, delete the file, redeploy, and restart the cache
-  server and both runners.
-* Entries live in `/var/lib/homelab/forgejo-cache/data/`, and the server evicts
-  old entries itself. Like the rest of the runner state, it's safe to lose: the
-  next run is a cold build that refills it.
-
-```sh
-sudo journalctl -u forgejo-cache -f       # "cache server is listening on …"
-sudo podman exec forgejo-runner-1 wget -S -O /dev/null http://forgejo-cache:4000/   # any HTTP status = reachable
-```
-
-### Image-build runner
-
-A third runner, only for `petr/ramus`'s `image.yml`, which builds the CI image
-(`forge.lab.pacmag.cz/petr/ramus/agentic`). In a docker-executor job container
-that build ran Podman on vfs with an empty layer store every time: 23 min fully
-cached, 63 min cold, and the vfs store has filled the disk. This runner is the
-`forgejo-runner` binary running as the `forgejo-imagebuild` system user with the
-**host executor** (label `image-build:host`), building with that user's rootless
-Podman: native kernel overlay, and a layer store in
-`~forgejo-imagebuild/.local/share/containers` that persists between builds.
-
-Deployed by `deploy_forgejo_imagebuild_runner.yml` (part of
-`deploy_services.yml`). It creates the user with subordinate id ranges and
-lingering, installs podman/git/nodejs 22 and the pinned `forgejo-runner` binary
-to `/usr/local/bin`, pins `overlay` in the user's `storage.conf`, asserts
-kernel ≥ 5.13 and that the driver really is native overlay, smoke-tests a
-container, then installs `forgejo-runner.service` and a weekly
-`podman-prune.timer` as **user units** of `forgejo-imagebuild`. Being a user
-unit, the whole build runs in `user-<uid>.slice`, which gets the same core 0
-carve-out as `machine.slice`.
-
-Registration: the runner is scoped to the repository, so create it at
-**petr/ramus → Settings → Actions → Runners → "Create new runner"**, put the
-UUID + token into `forgejo_imagebuild_runner` in `group_vars/server.yml`, and
-re-run the playbook. `capacity: 1` — concurrent builds would contend on the one
-layer store.
-
-The store lives on `/`, the host's only filesystem (one 120 GB disk, no free
-space in the volume group), shared with everything else. The playbook requires
-25 GB free before creating the user.
-
-Nothing ever shrinks the layer store except the weekly prune (every
-Containerfile change leaves one more image version behind): `podman system
-prune`, which removes those superseded, now untagged, versions. It keeps
-tagged images regardless of age, because this store is the build's only layer
-cache — the workflow keeps none in the registry. The root
-`podman-prune.timer` doesn't see this store. No registry login is kept for the
-user; the workflow logs in per job with its own auth file.
-
-**Security.** Jobs on `image-build:host` run PR-controlled code (the
-Containerfile's `RUN` steps) directly on the host as `forgejo-imagebuild` — not
-in a container. Acceptable on this private forge because only `image.yml` targets
-the label. The user has no wheel, no sudo, and isn't in `podman-users`, so it
-can't reach the rootful Podman socket. It can read its own runner token and the
-shared cache secret, and — being a lingering user — could leave user units
-behind; don't point untrusted repositories at this label.
-
-```sh
-sudo systemctl --user -M forgejo-imagebuild@ status forgejo-runner podman-prune.timer
-sudo journalctl _UID=$(id -u forgejo-imagebuild) -f
-sudo -u forgejo-imagebuild XDG_RUNTIME_DIR=/run/user/$(id -u forgejo-imagebuild) podman system df
-df -h ~forgejo-imagebuild
-```
-
-### Daily ops
-
-```sh
-sudo systemctl status 'forgejo-runner-*'
-sudo journalctl -u forgejo-runner-1 -f   # or -u forgejo-runner-2
-sudo podman ps --filter name=FORGEJO-ACTIONS-TASK   # job containers while a job runs
-```
-
-The admin Actions page
-(<https://forge.lab.pacmag.cz/-/admin/actions/runners>) shows each runner's
-`Idle`/`Active` status.
-
-A deploy restarts a runner only when its unit or `config.yml` actually changed
-*and* it was already running — restarting cancels the job in flight, so a runner
-this run just started is left alone.
-
-### Running CI on a repo
-
-Drop a workflow at `.forgejo/workflows/<name>.yml`. Minimal example running in
-the runner-default `node:20-bookworm` image:
-
-```yaml
-name: check
-
-on:
-  push:
-  pull_request:
-
-jobs:
-  check:
-    runs-on: docker
-    steps:
-      - uses: actions/checkout@v4
-      - run: echo "hello from CI"
-```
-
-`runs-on: docker` (or `ubuntu-latest`) matches the labels the runner registers
-with (set in `ansible/templates/forgejo-runner/config.yml.j2`).
-`actions/checkout@v4` resolves via
-`FORGEJO__actions__DEFAULT_ACTIONS_URL=https://code.forgejo.org`.
-
-Each runner's state (`config.yml` + workdirs) lives at
-`/var/lib/homelab/<runner-name>/`, and the shared Actions cache at
-`/var/lib/homelab/forgejo-cache/`. Only the `config.yml` is worth anything on
-restore — the rest is regenerated on the next run.
+Enabled on the forge (`FORGEJO__actions__ENABLED=true`). The runners are on
+[optiplex-2](../optiplex-2/README.md#forgejo-runners).
 
 ## Speedtest Tracker
 
@@ -513,11 +330,9 @@ domain would. Upload what you would run yourself.
 
 ### Two things that will bite eventually
 
-* **Disk.** This tree shares a filesystem with Forgejo's git objects and the
-  Actions cache, and CI churn has already filled it once — badly
-  enough that image builds failed with ENOSPC, which is why
-  `podman-prune.timer` exists. `df -h /var/lib/homelab` before uploading
-  anything large; there is no quota on this directory.
+* **Disk.** This tree shares a filesystem with Forgejo's git objects, its
+  container registry and every service's data. `df -h /var/lib/homelab`
+  before uploading anything large; there is no quota on this directory.
 * **Backups.** There are none, here or anywhere else on this host. Whatever
   lands in this directory is a single copy on a single disk.
 
