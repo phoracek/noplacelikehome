@@ -71,6 +71,7 @@ Access:
   control. The rest of labgrid runs inside SSH.
 - Bench net → anywhere: internet egress only.
 - Home LAN → optiplex-2: everything; its firewalld decides.
+- BackToHome VPN clients (`192.168.216.0/24`) → optiplex-2: SSH only.
 - optiplex-2 → bench net: as the home LAN.
 - optiplex-2 → home LAN: the OptiPlex (`192.168.0.252`) on 443 (Caddy: forge,
   registry) and 2222 (git over SSH) only.
@@ -187,6 +188,7 @@ Forwarding. The bench rules go above the bench's own drop:
 add place-before=$benchDrop chain=forward src-address=192.168.90.0/24 dst-address=192.168.89.0/24 protocol=tcp dst-port=22,20408 action=accept comment="optiplex-2: SSH and labgrid coordinator on the bench"
 add place-before=$benchDrop chain=forward src-address=192.168.90.0/24 dst-address=192.168.89.0/24 protocol=icmp action=accept comment="optiplex-2: ping the bench"
 add place-before=$wanDrop chain=forward src-address=192.168.0.0/24 dst-address=192.168.90.0/24 action=accept comment="optiplex-2: everything from the home LAN"
+add place-before=$wanDrop chain=forward src-address=192.168.216.0/24 dst-address=192.168.90.0/24 protocol=tcp dst-port=22 action=accept comment="optiplex-2: SSH from BackToHome"
 add place-before=$wanDrop chain=forward dst-address=192.168.90.0/24 action=drop comment="optiplex-2: nothing else reaches it"
 add place-before=$wanDrop chain=forward src-address=192.168.90.0/24 dst-address=192.168.0.252 protocol=tcp dst-port=443 action=accept comment="optiplex-2: forge and Caddy vhosts on the OptiPlex"
 add place-before=$wanDrop chain=forward src-address=192.168.90.0/24 dst-address=192.168.0.252 protocol=tcp dst-port=2222 action=accept comment="optiplex-2: git over SSH to the forge"
